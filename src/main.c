@@ -6,6 +6,7 @@
 #include "pico/binary_info.h"
 #include "mbedtls/md.h"
 #include "hardware/spi.h"
+#include "pico/cyw43_arch.h"
 
 #define RPMC_OP1_MSG_HEADER_LENGTH 4
 #define RPMC_SIGNATURE_LENGTH 32
@@ -26,7 +27,7 @@
 #define RPMC_READ_DATA_MSG_LENGTH 2
 #define RPMC_READ_DATA_ANSWER_LENGTH (1 + RPMC_TAG_LENGTH + RPMC_COUNTER_LENGTH + RPMC_SIGNATURE_LENGTH)
 
-#define TARGET_BAUDRATE (5U * 1000 * 1000) // 12 mhz 
+#define TARGET_BAUDRATE (50U * 1000 * 1000) // 12 mhz 
 
 static inline void cs_select(uint cs_pin) {
     asm volatile("nop \n nop \n nop"); // FIXME
@@ -177,7 +178,14 @@ int increment_counter(spi_inst_t * const spi_connection,
     return get_rpmc_status(spi_connection, cs_pin) != 0x80;
 }
 
-int loop(spi_inst_t * const spi_connection, const unsigned int cs_pin)
+void toggle_led(unsigned int led_pin) 
+{
+    static bool value = false;
+    cyw43_arch_gpio_put(led_pin, value);
+    value = !value;
+}
+
+int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const unsigned int cs_pin)
 {
     const uint8_t root_key[RPMC_HMAC_KEY_LENGTH] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                                                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -196,7 +204,7 @@ int loop(spi_inst_t * const spi_connection, const unsigned int cs_pin)
         printf("Error: could not set initialize hmac key register\n");
         return 1;
     }
-    printf("Updated hmac key register\n");
+    printf("Updated hmac key register for counter %u\n", target_counter);
 
     uint32_t curr_counter_value;
     if (get_counter_value(spi_connection, cs_pin, target_counter, hmac_key_register, &curr_counter_value)) {
@@ -212,9 +220,13 @@ int loop(spi_inst_t * const spi_connection, const unsigned int cs_pin)
             return 1;
         }
 
-        uint32_t next_counter_value = curr_counter_value + 1;
+        const uint32_t next_counter_value = curr_counter_value + 1;
+        if (((next_counter_value) / 10000) > (curr_counter_value / 10000)) {
+            toggle_led(led_pin);
+        }
+
         if (((next_counter_value) / 1000000) > (curr_counter_value / 1000000)) {
-            time_t next_time = time(NULL);
+            const time_t next_time = time(NULL);
             printf("Incrementing the counter to %u took %lf seconds\n", next_counter_value, difftime(next_time, start_time));
             start_time = next_time;
         }
@@ -230,6 +242,11 @@ int main()
     sleep_ms(1000);
     printf("Device is starting\n");
 
+    if (cyw43_arch_init()) {
+        printf("Wi-Fi init failed\n");
+        return 1;
+    }
+
     spi_init(spi0, TARGET_BAUDRATE);
     gpio_set_function(PICO_DEFAULT_SPI_RX_PIN, GPIO_FUNC_SPI);
     gpio_set_function(PICO_DEFAULT_SPI_SCK_PIN, GPIO_FUNC_SPI);
@@ -244,7 +261,7 @@ int main()
     // Make the CS pin available to picotool
     bi_decl(bi_1pin_with_name(PICO_DEFAULT_SPI_CSN_PIN, "SPI CS"));
 
-    int ret = loop(spi0, PICO_DEFAULT_SPI_CSN_PIN);
+    int ret = loop(spi0, CYW43_WL_GPIO_LED_PIN, PICO_DEFAULT_SPI_CSN_PIN);
 exit:
     spi_deinit(spi0);
     return ret;
