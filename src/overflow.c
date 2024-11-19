@@ -8,8 +8,6 @@
 #include "pico/cyw43_arch.h"
 #include "rpmc_ops.h"
 
-#define TARGET_BAUDRATE (50U * 1000 * 1000) // 12 mhz 
-
 void toggle_led(unsigned int led_pin) 
 {
     static bool value = false;
@@ -24,7 +22,7 @@ int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const un
                                                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                                                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     const uint8_t key_data[RPMC_KEY_DATA_LENGTH] = {0x00, 0x00, 0x00, 0x00}; 
-    const uint8_t target_counter = 1;
+    const uint8_t target_counter = 0;
 
     uint8_t hmac_key_register[RPMC_HMAC_KEY_LENGTH];
     if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), root_key, RPMC_HMAC_KEY_LENGTH, key_data, RPMC_KEY_DATA_LENGTH, hmac_key_register)) {
@@ -78,8 +76,8 @@ int main()
         printf("Wi-Fi init failed\n");
         return 1;
     }
-
-    spi_init(spi0, TARGET_BAUDRATE);
+    
+    spi_init(spi0, 1U * 1000 * 1000);
     gpio_set_function(PICO_DEFAULT_SPI_RX_PIN, GPIO_FUNC_SPI);
     gpio_set_function(PICO_DEFAULT_SPI_SCK_PIN, GPIO_FUNC_SPI);
     gpio_set_function(PICO_DEFAULT_SPI_TX_PIN, GPIO_FUNC_SPI);
@@ -92,6 +90,9 @@ int main()
     gpio_set_dir(PICO_DEFAULT_SPI_CSN_PIN, GPIO_OUT);
     // Make the CS pin available to picotool
     bi_decl(bi_1pin_with_name(PICO_DEFAULT_SPI_CSN_PIN, "SPI CS"));
+
+    init_spi_transmission_function((int (*)(void *, uint8_t, const uint8_t *, size_t))spi_read_blocking,
+                                   (int (*)(void *, const uint8_t *, size_t))spi_write_blocking);
 
     int ret = loop(spi0, CYW43_WL_GPIO_LED_PIN, PICO_DEFAULT_SPI_CSN_PIN);
 exit:

@@ -7,6 +7,17 @@
 #include "mbedtls/md.h"
 
 
+static int (*spi_read)(void *, uint8_t, const uint8_t *, size_t) = NULL;
+static int (*spi_write)(void *, const uint8_t *, size_t) = NULL;
+
+
+void init_spi_transmission_function(int (*read_func)(void *, uint8_t, const uint8_t *, size_t),
+                                    int (*write_func)(void *, const uint8_t *, size_t)) 
+{
+    spi_read = read_func;
+    spi_write = write_func;
+}
+
 static inline void cs_select(uint cs_pin) {
     asm volatile("nop \n nop \n nop"); // FIXME
     gpio_put(cs_pin, 0);
@@ -19,22 +30,25 @@ static inline void cs_deselect(uint cs_pin) {
     asm volatile("nop \n nop \n nop"); // FIXME
 }
 
-void spi_transaction(spi_inst_t * const spi_connection, const unsigned int cs_pin,
+void spi_transaction(void * const spi_connection, const unsigned int cs_pin,
                      const uint8_t * const in_buffer, const size_t in_length,
                      uint8_t * out_buffer, const size_t out_length)
 {
+    hard_assert(spi_read != NULL);
+    hard_assert(spi_write != NULL);
+
     cs_select(cs_pin);
 
     if (in_buffer != NULL)
-        spi_write_blocking(spi_connection, in_buffer, in_length);
+        spi_write(spi_connection, in_buffer, in_length);
 
     if (out_buffer != NULL)
-        spi_read_blocking(spi_connection, 0, out_buffer, out_length);
+        spi_read(spi_connection, 0, out_buffer, out_length);
 
     cs_deselect(cs_pin);
 }
 
-uint8_t get_rpmc_status(spi_inst_t * const spi_connection, const unsigned int cs_pin)
+uint8_t get_rpmc_status(void * const spi_connection, const unsigned int cs_pin)
 {
     const uint8_t get_status_msg[RPMC_READ_DATA_MSG_LENGTH] = {
         OP2_OPCODE,
@@ -47,7 +61,7 @@ uint8_t get_rpmc_status(spi_inst_t * const spi_connection, const unsigned int cs
     return status;
 }
 
-void poll_until_finished(spi_inst_t * const spi_connection, const unsigned int cs_pin)
+void poll_until_finished(void * const spi_connection, const unsigned int cs_pin)
 {
     uint8_t status;
 
@@ -58,7 +72,7 @@ void poll_until_finished(spi_inst_t * const spi_connection, const unsigned int c
     } while (status & 1);
 }
 
-int update_hmac_key_register(spi_inst_t * const spi_connection,
+int update_hmac_key_register(void * const spi_connection,
                              const unsigned int cs_pin,
                              const uint8_t target_counter,
                              const uint8_t hmac_key[RPMC_HMAC_KEY_LENGTH],
@@ -84,7 +98,7 @@ int update_hmac_key_register(spi_inst_t * const spi_connection,
     return get_rpmc_status(spi_connection, cs_pin) != 0x80;
 }
 
-int get_counter_value(spi_inst_t * const spi_connection,
+int get_counter_value(void * const spi_connection,
                       const unsigned int cs_pin,
                       const uint8_t target_counter,
                       const uint8_t hmac_key[RPMC_HMAC_KEY_LENGTH],
@@ -129,7 +143,7 @@ int get_counter_value(spi_inst_t * const spi_connection,
     return 0;
 }
 
-int increment_counter(spi_inst_t * const spi_connection,
+int increment_counter(void * const spi_connection,
                       const unsigned int cs_pin,
                       const uint8_t target_counter,
                       const uint8_t hmac_key[RPMC_HMAC_KEY_LENGTH],
