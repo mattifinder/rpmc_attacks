@@ -9,16 +9,23 @@
 #include "clock_spi.pio.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
+#if CONFIG_GLITCH_MODE == GLITCH_WITHOUT_SETUP
 #include "pico/multicore.h"
+#endif
 
 /*
  *  TODO:
  *      - Use Interrupts instead of fifos for sync points
  */
 
+#define GLITCH_WITH_SETUP 1
+#define GLITCH_WITHOUT_SETUP 2
+
+
 struct pio_instance {
     PIO pio;
     unsigned int state_machine;
+    int load_offset;
 };
 
 // Hopefully this can handle multithreading :)
@@ -118,16 +125,27 @@ static int loop(const unsigned int led_pin, const unsigned int cs_pin)
         return 1;
     };
 
-    for (size_t glitch_cycles = 1; glitch_cycles < 100000; glitch_cycles++) {
+    // This tries a clock glitch after every cycle
+    for (size_t glitch_cycles = 0; glitch_cycles < RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH * 8 * 2; glitch_cycles++) {
         printf("Trying to glitch with %u cycles ... ", glitch_cycles);
 
+        #if CONFIG_GLITCH_MODE == GLITCH_WITH_SETUP
+        // This should encode jmp setup_glitch
+        const uint16_t start_glitch_jump = spi_pio_instance.load_offset + spi_with_setup_for_glitch_offset_setup_glitch;
+        // There should be no current tranmission going on
+        pio_sm_exec(spi_pio_instance.pio, spi_pio_instance.state_machine, start_glitch_jump);
+        pio_sm_put_blocking(spi_pio_instance.pio, spi_pio_instance.state_machine, glitch_cycles);
+        #elif CONFIG_GLITCH_MODE == GLITCH_WITHOUT_SETUP
         multicore_fifo_push_blocking(glitch_cycles);
 
         // Sync point 1: wait for the other core to have recieved the glitch cycles 
         multicore_fifo_pop_blocking();
+        #endif
+
 
         spi_transaction(&spi_pio_instance, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
 
+        #if CONFIG_GLITCH_MODE == GLITCH_WITHOUT_SETUP
         // Sync point 2: wait for the other core to have finished the glitch
         // This should have happened during the tranmission, otherwise we can stop
         if (!multicore_fifo_rvalid()) {
@@ -135,6 +153,7 @@ static int loop(const unsigned int led_pin, const unsigned int cs_pin)
             return 1;
         }
         multicore_fifo_pop_blocking();
+        #endif
 
         poll_until_finished(&spi_pio_instance, cs_pin);
         uint8_t status = get_rpmc_status(&spi_pio_instance, cs_pin);
@@ -151,7 +170,7 @@ static int loop(const unsigned int led_pin, const unsigned int cs_pin)
     return 0;
 }
 
-
+#if CONFIG_GLITCH_MODE == GLITCH_WITHOUT_SETUP
 void __time_critical_func(glitch_countdown)(void)
 {
     // This should be set x, 0 in assembled form
@@ -164,7 +183,7 @@ void __time_critical_func(glitch_countdown)(void)
         multicore_fifo_push_blocking(0);
 
         while (--glitch_cycles)
-            tight_loop_contents();
+            ;
 
         pio_sm_exec(spi_pio_instance.pio, spi_pio_instance.state_machine, clock_glitch_instruction);
 
@@ -172,6 +191,7 @@ void __time_critical_func(glitch_countdown)(void)
         multicore_fifo_push_blocking(0);
     }
 }
+#endif
 
 static void pio_spi_init(PIO pio,
                          uint sm,
@@ -182,7 +202,12 @@ static void pio_spi_init(PIO pio,
                          uint pin_mosi,
                          uint pin_miso)
 {
+    #if CONFIG_GLITCH_MODE == GLITCH_WITH_SETUP
+    pio_sm_config c = spi_with_setup_for_glitch_program_get_default_config(prog_offs);
+    #elif CONFIG_GLITCH_MODE == GLITCH_WITHOUT_SETUP
     pio_sm_config c = spi_with_glitch_program_get_default_config(prog_offs);
+    #endif
+
     sm_config_set_out_pins(&c, pin_mosi, 1);
     sm_config_set_in_pins(&c, pin_miso);
     sm_config_set_sideset_pins(&c, pin_sck);
@@ -227,16 +252,30 @@ int main()
         return 1;
     }
 
+    #if CONFIG_GLITCH_MODE == GLITCH_WITHOUT_SETUP
     multicore_reset_core1();
     multicore_launch_core1(glitch_countdown);
     multicore_fifo_drain();
+    #endif
 
-    const int programm_offset =  pio_add_program(spi_pio_instance.pio, &spi_with_glitch_program);
+
+    spi_pio_instance.load_offset = pio_add_program(spi_pio_instance.pio,
+                                                   #if CONFIG_GLITCH_MODE == GLITCH_WITHOUT_SETUP
+                                                   &spi_with_glitch_program
+                                                   #elif CONFIG_GLITCH_MODE == GLITCH_WITH_SETUP
+                                                   &spi_with_setup_for_glitch_program
+                                                   #endif
+                                                   );
+    if (spi_pio_instance.load_offset < 0) {
+        printf("Error: could not add pio programm\n");
+        return 1;
+    }
+
     pio_spi_init(spi_pio_instance.pio,
                  spi_pio_instance.state_machine,
-                 programm_offset,
+                 spi_pio_instance.load_offset,
                  8,
-                 freq_to_clkdiv(1U * 1000 * 1000),
+                 freq_to_clkdiv(80U * 1000 * 1000),
                  PICO_DEFAULT_SPI_SCK_PIN, 
                  PICO_DEFAULT_SPI_TX_PIN, 
                  PICO_DEFAULT_SPI_RX_PIN);

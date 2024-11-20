@@ -6,7 +6,6 @@
 continue_falling:
     set x, 1                    ; 0 in x means that we want the glitch to happen at the next possible time 
 .wrap_target
-main_loop:
     out pins, 1 side 0 [2]
     jmp !x, glitch_leading
 continue_leading:
@@ -29,5 +28,36 @@ glitch_falling:
     in pins, 1 side 1 [1]
     jmp continue_falling
 
+.program spi_with_setup_for_glitch
+.side_set 1 opt
 
+.wrap_target
+normal_execution:
+    out pins, 1 side 0 [3]
+normal_execution_in:
+    in pins, 1 side 1 [3]
+.wrap
 
+; this is where we jump to when we want to execute the glitch
+; this needs to happen while before data is being sent 
+public setup_glitch:
+    pull block              ; get glitch cycles as word
+    out x, 32               ; put glitch cycles into x
+
+glitch_loop:
+    out pins, 1 side 0 [2]
+    jmp x--, continue_leading
+glitch_leading:
+    in pins, 1 side 1
+    out pins, 1 side 0
+    in pins, 1 side 1
+    jmp normal_execution
+
+continue_leading:
+    in pins, 1 side 1 [2]
+    jmp x--, glitch_loop
+glitch_falling:
+    out pins, 1 side 0
+    in pins, 1 side 1
+    out pins, 1 side 0
+    jmp normal_execution_in
