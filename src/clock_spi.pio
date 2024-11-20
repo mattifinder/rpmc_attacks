@@ -1,0 +1,33 @@
+; Glitch is enabled by forcing the execution of set x, 0
+.define PUBLIC PIO_SPI_CYCLES_PER_BIT 8
+.program spi_with_glitch
+.side_set 1 opt
+
+continue_falling:
+    set x, 1                    ; 0 in x means that we want the glitch to happen at the next possible time 
+.wrap_target
+main_loop:
+    out pins, 1 side 0 [2]
+    jmp !x, glitch_leading
+continue_leading:
+    in pins, 1 side 1 [2]
+    jmp !x, glitch_falling
+.wrap
+
+glitch_leading:
+    in pins, 1 side 1
+    out pins, 1 side 0
+    in pins, 1 side 1 [1]
+    out pins, 1 side 0 [1]
+    set x, 1
+    jmp continue_leading
+
+glitch_falling:
+    out pins, 1 side 0
+    in pins, 1 side 1
+    out pins, 1 side 0 [1]
+    in pins, 1 side 1 [1]
+    jmp continue_falling
+
+
+
