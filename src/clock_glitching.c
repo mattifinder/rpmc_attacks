@@ -113,17 +113,19 @@ static int loop(const unsigned int led_pin, const unsigned int cs_pin)
         return 1;
     };
 
+    const uint32_t base_clocks_hz = clock_get_hz(clk_sys);
+
     // This tries a clock glitch after every cycle
     for (size_t glitch_cycles = 0; glitch_cycles < RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH * 8 * 2; glitch_cycles++) {
-        printf("Trying to glitch with %u cycles ... ", glitch_cycles);
+        printf("Glitching after %u clock changes ... ", glitch_cycles);
 
-        // This should encode jmp setup_glitch
-        const uint16_t start_glitch_jump = spi_pio_instance.load_offset + spi_with_setup_for_glitch_offset_setup_glitch;
         // There should be no current tranmission going on
-        pio_sm_exec(spi_pio_instance.pio, spi_pio_instance.state_machine, start_glitch_jump);
+        pio_sm_exec(spi_pio_instance.pio, spi_pio_instance.state_machine, pio_encode_jmp(spi_pio_instance.load_offset + spi_with_setup_for_glitch_offset_setup_glitch));
         pio_sm_put_blocking(spi_pio_instance.pio, spi_pio_instance.state_machine, glitch_cycles);
 
+        set_sys_clock_hz(266U * 1000 * 1000, true);
         spi_transaction(&spi_pio_instance, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
+        set_sys_clock_hz(base_clocks_hz, true);
 
         poll_until_finished(&spi_pio_instance, cs_pin);
         uint8_t status = get_rpmc_status(&spi_pio_instance, cs_pin);
@@ -133,7 +135,7 @@ static int loop(const unsigned int led_pin, const unsigned int cs_pin)
             printf("success\n");
             return 0;
         } else {
-            printf("fail (status %#x)\n", status);
+            printf("fail (status 0x%02x)\n", status);
         }
     }
 
@@ -174,7 +176,7 @@ static void pio_spi_init(PIO pio,
 }
 
 static inline float freq_to_clkdiv(uint32_t freq) {
-    float div = clock_get_hz(clk_sys) * 1.0 / (freq * PIO_SPI_CYCLES_PER_BIT);
+    float div = (double)clock_get_hz(clk_sys) / (freq * PIO_SPI_CYCLES_PER_BIT);
 
     if (div < 1.0)
         div = 1.0;
@@ -209,7 +211,7 @@ int main()
                  spi_pio_instance.state_machine,
                  spi_pio_instance.load_offset,
                  8,
-                 clkdiv,
+                 1.0, // run as fast as possible
                  PICO_DEFAULT_SPI_SCK_PIN, 
                  PICO_DEFAULT_SPI_TX_PIN, 
                  PICO_DEFAULT_SPI_RX_PIN);

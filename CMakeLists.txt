@@ -27,7 +27,6 @@ pico_add_extra_outputs(overflow)
 
 # clock glitching
 add_executable(clock_glitching src/clock_glitching.c)
-
 pico_generate_pio_header(clock_glitching ${CMAKE_CURRENT_LIST_DIR}/src/clock_spi.pio)
 target_include_directories(clock_glitching PRIVATE include)
 target_link_libraries(clock_glitching PRIVATE rpmc_ops pico_stdlib pico_mbedtls pico_cyw43_arch_none hardware_pio)
