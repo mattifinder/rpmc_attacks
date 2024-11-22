@@ -1,41 +1,15 @@
-; Glitch is enabled by forcing the execution of set x, 0
 .define PUBLIC PIO_SPI_CYCLES_PER_BIT 8
-.program spi_with_glitch
-.side_set 1 opt
-
-continue_falling:
-    set x, 1                    ; 0 in x means that we want the glitch to happen at the next possible time 
-.wrap_target
-    out pins, 1 side 0 [2]
-    jmp !x, glitch_leading
-continue_leading:
-    in pins, 1 side 1 [2]
-    jmp !x, glitch_falling
-.wrap
-
-glitch_leading:
-    in pins, 1 side 1
-    out pins, 1 side 0
-    in pins, 1 side 1 [1]
-    out pins, 1 side 0 [1]
-    set x, 1
-    jmp continue_leading
-
-glitch_falling:
-    out pins, 1 side 0
-    in pins, 1 side 1
-    out pins, 1 side 0 [1]
-    in pins, 1 side 1 [1]
-    jmp continue_falling
+; We need 4 clock cycles to have the whole glitch happen in one 4 clock interval 
+.define TIME_FOR_CLOCK_EVENT (PIO_SPI_CYCLES_PER_BIT / 2)
 
 .program spi_with_setup_for_glitch
 .side_set 1 opt
 
 .wrap_target
 normal_execution:
-    out pins, 1 side 0 [3]
+    out pins, 1 side 0 [TIME_FOR_CLOCK_EVENT - 1]
 normal_execution_in:
-    in pins, 1 side 1 [3]
+    in pins, 1 side 1 [TIME_FOR_CLOCK_EVENT - 1]
 .wrap
 
 ; this is where we jump to when we want to execute the glitch
@@ -45,7 +19,7 @@ public setup_glitch:
     out x, 32               ; put glitch cycles into x
 
 glitch_loop:
-    out pins, 1 side 0 [2]
+    out pins, 1 side 0 [TIME_FOR_CLOCK_EVENT - 2]
     jmp x--, continue_leading
 glitch_leading:
     in pins, 1 side 1
@@ -54,7 +28,7 @@ glitch_leading:
     jmp normal_execution
 
 continue_leading:
-    in pins, 1 side 1 [2]
+    in pins, 1 side 1 [TIME_FOR_CLOCK_EVENT - 2]
     jmp x--, glitch_loop
 glitch_falling:
     out pins, 1 side 0
