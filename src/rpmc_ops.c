@@ -46,6 +46,16 @@ uint8_t get_rpmc_status(void * const spi_connection, const unsigned int cs_pin)
     return status;
 }
 
+void get_full_rpmc_status(void * spi_connection, unsigned int cs_pin, struct rpmc_status_register * out_register)
+{
+    const uint8_t get_status_msg[RPMC_READ_DATA_MSG_LENGTH] = {
+        OP2_OPCODE,
+        0,
+    };
+    
+    spi_transaction(spi_connection, cs_pin, get_status_msg, RPMC_READ_DATA_MSG_LENGTH, (uint8_t *)out_register, sizeof(struct rpmc_status_register));
+}
+
 void poll_until_finished(void * const spi_connection, const unsigned int cs_pin)
 {
     uint8_t status;
