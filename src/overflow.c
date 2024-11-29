@@ -15,6 +15,16 @@ void toggle_led(unsigned int led_pin)
     value = !value;
 }
 
+inline int rpmc_ops_spi_write(void * spi_connection, const uint8_t * write_buffer, size_t write_amount)
+{
+    return spi_write_blocking((spi_inst_t *)spi_connection, write_buffer, write_amount);
+}
+
+inline int rpmc_ops_spi_read(void * spi_connection, uint8_t fill_char, uint8_t * read_buffer, size_t read_amount)
+{
+    return spi_read_blocking((spi_inst_t *)spi_connection, fill_char, read_buffer, read_amount);
+}
+
 int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const unsigned int cs_pin)
 {
     const uint8_t root_key[RPMC_HMAC_KEY_LENGTH] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -90,9 +100,6 @@ int main()
     gpio_set_dir(PICO_DEFAULT_SPI_CSN_PIN, GPIO_OUT);
     // Make the CS pin available to picotool
     bi_decl(bi_1pin_with_name(PICO_DEFAULT_SPI_CSN_PIN, "SPI CS"));
-
-    init_spi_transmission_function((int (*)(void *, uint8_t, const uint8_t *, size_t))spi_read_blocking,
-                                   (int (*)(void *, const uint8_t *, size_t))spi_write_blocking);
 
     int ret = loop(spi0, CYW43_WL_GPIO_LED_PIN, PICO_DEFAULT_SPI_CSN_PIN);
 exit:

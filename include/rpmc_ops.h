@@ -23,10 +23,9 @@
 #define RPMC_READ_DATA_MSG_LENGTH 2
 #define RPMC_READ_DATA_ANSWER_LENGTH (1 + RPMC_TAG_LENGTH + RPMC_COUNTER_LENGTH + RPMC_SIGNATURE_LENGTH)
 
-// set the internal transmission functions must be called before any operation
-// spi connection is always passed to the function in the first arg
-void init_spi_transmission_function(int (*read_func)(void *, uint8_t, const uint8_t *, size_t),
-                                    int (*write_func)(void *, const uint8_t *, size_t));
+// These are meant to be defined by the user code to make this customizable
+extern int rpmc_ops_spi_read(void * spi_connection, uint8_t fill_char, uint8_t * read_buffer, size_t read_amount);
+extern int rpmc_ops_spi_write(void * spi_connection, const uint8_t * write_buffer, size_t write_amount);
 
 void spi_transaction(void * spi_connection, unsigned int cs_pin,
                      const uint8_t * in_buffer, size_t in_length,

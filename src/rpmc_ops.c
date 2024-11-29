@@ -6,17 +6,6 @@
 #include "mbedtls/md.h"
 
 
-static int (*spi_read)(void *, uint8_t, const uint8_t *, size_t) = NULL;
-static int (*spi_write)(void *, const uint8_t *, size_t) = NULL;
-
-
-void init_spi_transmission_function(int (*read_func)(void *, uint8_t, const uint8_t *, size_t),
-                                    int (*write_func)(void *, const uint8_t *, size_t)) 
-{
-    spi_read = read_func;
-    spi_write = write_func;
-}
-
 static inline void cs_select(uint cs_pin) {
     asm volatile("nop \n nop \n nop"); // FIXME
     gpio_put(cs_pin, 0);
@@ -33,16 +22,13 @@ void spi_transaction(void * const spi_connection, const unsigned int cs_pin,
                      const uint8_t * const in_buffer, const size_t in_length,
                      uint8_t * out_buffer, const size_t out_length)
 {
-    hard_assert(spi_read != NULL);
-    hard_assert(spi_write != NULL);
-
     cs_select(cs_pin);
 
     if (in_buffer != NULL)
-        spi_write(spi_connection, in_buffer, in_length);
+        rpmc_ops_spi_write(spi_connection, in_buffer, in_length);
 
     if (out_buffer != NULL)
-        spi_read(spi_connection, 0, out_buffer, out_length);
+        rpmc_ops_spi_read(spi_connection, 0, out_buffer, out_length);
 
     cs_deselect(cs_pin);
 }

