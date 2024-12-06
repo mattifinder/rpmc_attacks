@@ -12,6 +12,10 @@
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
 
+
+const uint32_t possible_sys_clocks[] = {250, 260, 280, 300, 308};
+#define POSSIBLE_SYS_CLOCKS_SIZE count_of(possible_sys_clocks)
+
 struct pio_instance {
     PIO pio;
     unsigned int state_machine;
@@ -109,8 +113,10 @@ static int glitch_increment(struct pio_instance * const spi_connection,
                             const unsigned int cs_pin,
                             const uint8_t target_counter,
                             const size_t num_counters,
-                            const uint32_t const old_counter_values[num_counters])
+                            const uint32_t const old_counter_values[num_counters],
+                            const uint32_t overclock_hz)
 {
+    const uint32_t base_sys_clocks = clock_get_hz(clk_sys);
     uint32_t * new_counter_values = malloc(sizeof(uint32_t) * num_counters);
     if (new_counter_values == NULL) {
         printf("Could not allocate new counter values\n");
@@ -149,7 +155,9 @@ static int glitch_increment(struct pio_instance * const spi_connection,
         
         transmit_glitch_cycles(spi_connection, glitch_cycles);
 
+        set_sys_clock_hz(overclock_hz, true);
         spi_transaction(spi_connection, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
+        set_sys_clock_hz(base_sys_clocks, true);
 
         poll_until_finished(spi_connection, cs_pin);
 
@@ -181,8 +189,10 @@ static int glitch_get(struct pio_instance * const spi_connection,
                       const uint8_t const hmac_key[RPMC_HMAC_KEY_LENGTH],
                       const unsigned int cs_pin,
                       const uint8_t target_counter,
-                      const uint32_t current_value)
+                      const uint32_t current_value,
+                      const uint32_t overclock_hz)
 {
+    const uint32_t base_sys_clocks = clock_get_hz(clk_sys);
     const size_t tag_offset = RPMC_OP1_MSG_HEADER_LENGTH;
     const size_t signature_offset = tag_offset + RPMC_TAG_LENGTH;
     uint8_t get_msg[RPMC_GET_MONOTONIC_COUNTER_MSG_LENGTH] = {
@@ -207,7 +217,9 @@ static int glitch_get(struct pio_instance * const spi_connection,
     for (size_t glitch_cycles = 0; glitch_cycles < RPMC_GET_MONOTONIC_COUNTER_MSG_LENGTH * 8 * 2; glitch_cycles++) {
         transmit_glitch_cycles(spi_connection, glitch_cycles);
 
+        set_sys_clock_hz(overclock_hz, true);
         spi_transaction(spi_connection, cs_pin, get_msg, RPMC_GET_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
+        set_sys_clock_hz(base_sys_clocks, true);
 
         poll_until_finished(spi_connection, cs_pin);
 
@@ -233,6 +245,61 @@ static int glitch_get(struct pio_instance * const spi_connection,
             print_glitch_result(glitch_cycles, "signature differs", result.return_code);
         } else if (current_value != ((result.counter_data[0] << 24) | (result.counter_data[1] << 16) | (result.counter_data[2] << 8) | result.counter_data[3])) {
             print_glitch_result(glitch_cycles, "counter value is wrong", result.return_code);
+        }
+    }
+    printf("Done\n");
+
+    return 0;
+}
+
+static int glitch_signature(struct pio_instance * const spi_connection,
+                            const uint8_t const hmac_key[RPMC_HMAC_KEY_LENGTH],
+                            const unsigned int cs_pin,
+                            const uint8_t target_counter,
+                            const uint32_t current_value,
+                            const uint32_t overclock_hz)
+{
+    const uint32_t base_sys_clocks = clock_get_hz(clk_sys);
+    const size_t signature_offset = RPMC_OP1_MSG_HEADER_LENGTH + RPMC_COUNTER_LENGTH;
+    uint8_t increment_msg[RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH] = {
+        OP1_OPCODE, // Opcode
+        0x02, // CmdType
+        target_counter, // CounterAddr
+        0, // Reserved
+        (current_value >> 24) & 0xff,
+        (current_value >> 16) & 0xff,
+        (current_value >> 8) & 0xff,
+        current_value & 0xff
+    };
+    if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                        hmac_key,
+                        RPMC_HMAC_KEY_LENGTH,
+                        increment_msg,
+                        signature_offset,
+                        increment_msg + signature_offset)) {
+        printf("Error: can't sign hmac increment counter message\n");
+        return 1;
+    };
+
+    // We try to glitch the signature so we flip one bit
+    increment_msg[RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH - 1] ^= 0b100;
+
+    printf("Trying to glitch the signature\n");
+    for (size_t glitch_cycles = 0; glitch_cycles < RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH * 8 * 2; glitch_cycles++) {
+        transmit_glitch_cycles(spi_connection, glitch_cycles);
+
+        set_sys_clock_hz(overclock_hz, true);
+        spi_transaction(spi_connection, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
+        set_sys_clock_hz(base_sys_clocks, true);
+
+        poll_until_finished(spi_connection, cs_pin);
+
+        const uint8_t status = get_rpmc_status(spi_connection, cs_pin);
+
+        if (status == 0x80) {
+            print_glitch_result(glitch_cycles, "success", status);
+        } else if ((status & (1U << 2)) == 0) {
+            print_glitch_result(glitch_cycles, "unexpected return code", status);
         }
     }
     printf("Done\n");
@@ -271,13 +338,21 @@ static int loop(struct pio_instance * const spi_connection, const unsigned int c
         return 1;
     }
     
-    int ret = glitch_increment(spi_connection, hmac_key_register, cs_pin, target_counter, num_counters, old_counter_values);
-    if (ret)
-        return ret;
+    for (size_t i = 0; i < POSSIBLE_SYS_CLOCKS_SIZE; i++) {
+        const uint32_t overclock_cycles = possible_sys_clocks[i] * 1000 * 1000;
+        printf("Trying glitches with overclock of %u Hz\n", overclock_cycles);
+        int ret = glitch_increment(spi_connection, hmac_key_register, cs_pin, target_counter, num_counters, old_counter_values, overclock_cycles);
+        if (ret)
+            return ret;
 
-    ret = glitch_get(spi_connection, hmac_key_register, cs_pin, target_counter, old_counter_values[target_counter]);
-    if (ret)
-        return ret;
+        ret = glitch_get(spi_connection, hmac_key_register, cs_pin, target_counter, old_counter_values[target_counter], overclock_cycles);
+        if (ret)
+            return ret;
+
+        ret = glitch_signature(spi_connection, hmac_key_register, cs_pin, target_counter, old_counter_values[target_counter], overclock_cycles);
+        if (ret)
+            return ret;
+    }
 
     return 0;
 }
@@ -329,7 +404,6 @@ static inline float freq_to_clkdiv(uint32_t freq) {
 int main()
 {
     vreg_set_voltage(VREG_VOLTAGE_1_30);
-    set_sys_clock_khz(200000, true);
     stdio_init_all();
     sleep_ms(1000);
     printf("Device is starting\n");
@@ -365,6 +439,8 @@ int main()
     bi_decl(bi_1pin_with_name(PICO_DEFAULT_SPI_CSN_PIN, "SPI CS"));
 
     int ret = loop(&spi_pio_instance, PICO_DEFAULT_SPI_CSN_PIN);
+
+    printf("Loop exited with %d return code\n", ret);
 
     while (true)
         ;
