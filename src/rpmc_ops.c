@@ -59,12 +59,13 @@ void get_full_rpmc_status(void * spi_connection, unsigned int cs_pin, struct rpm
 void poll_until_finished(void * const spi_connection, const unsigned int cs_pin)
 {
     uint8_t status;
+    int timeout = 10;
 
     do {
         // according to specs this is the typical time it take to increment the counter
         sleep_us(80);
         status = get_rpmc_status(spi_connection, cs_pin);
-    } while (status & 1);
+    } while (status & 1 && timeout-- > 0);
 }
 
 int update_hmac_key_register(void * const spi_connection,
@@ -107,6 +108,7 @@ int get_counter_value(void * const spi_connection,
 		target_counter, // CounterAddr
 		0 // Reserved
 	};
+    memset(msg + RPMC_OP1_MSG_HEADER_LENGTH, 0xff, RPMC_TAG_LENGTH);
 
     if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), hmac_key, RPMC_HMAC_KEY_LENGTH, msg, signature_offset, msg + signature_offset)) {
         printf("Error: can't sign hmac get counter message\n");
@@ -117,23 +119,37 @@ int get_counter_value(void * const spi_connection,
     poll_until_finished(spi_connection, cs_pin);
 
     // Read the counter value from read data message
-    const uint8_t get_status_msg[RPMC_READ_DATA_MSG_LENGTH] = {
-        OP2_OPCODE,
-        0,
-    };
-    const unsigned int counter_offset = 1 + RPMC_TAG_LENGTH;
-    uint8_t full_status[RPMC_READ_DATA_ANSWER_LENGTH];
-    
-    spi_transaction(spi_connection, cs_pin, get_status_msg, RPMC_READ_DATA_MSG_LENGTH, full_status, RPMC_READ_DATA_ANSWER_LENGTH);
-    if (full_status[0] != 0x80) {
-        printf("Error: could not read counter value\n");
+    struct rpmc_status_register full_status;
+    get_full_rpmc_status(spi_connection, cs_pin, &full_status);
+    if (full_status.return_code != 0x80) {
+        printf("Error: wrong return code\n");
         return 1;
     }
 
-    *value = full_status[counter_offset] ;
-    *value = (*value << 8) | full_status[counter_offset + 1];
-    *value = (*value << 8) | full_status[counter_offset + 2];
-    *value = (*value << 8) | full_status[counter_offset + 3];
+    if (memcmp(msg + RPMC_OP1_MSG_HEADER_LENGTH, full_status.tag, RPMC_TAG_LENGTH) != 0) {
+        printf("Error: tag differs\n");
+        return 1;
+    }
+
+    uint8_t expected_signature[RPMC_SIGNATURE_LENGTH];
+    if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                        hmac_key,
+                        RPMC_HMAC_KEY_LENGTH,
+                        ((uint8_t *)&full_status) + 1,
+                        RPMC_TAG_LENGTH + RPMC_COUNTER_LENGTH,
+                        expected_signature)) {
+        printf("Error: can't calculate expected signature\n");
+        return 1;
+    };
+    if (memcmp(expected_signature, full_status.signature, RPMC_SIGNATURE_LENGTH) != 0) {
+        printf("Error: signature differs\n");
+        return 2;
+    }
+
+    *value = full_status.counter_data[0] ;
+    *value = (*value << 8) | full_status.counter_data[1];
+    *value = (*value << 8) | full_status.counter_data[2];
+    *value = (*value << 8) | full_status.counter_data[3];
 
     return 0;
 }
