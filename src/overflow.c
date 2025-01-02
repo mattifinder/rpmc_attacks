@@ -47,7 +47,6 @@ int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const un
     printf("Start counter value %u for counter %u\n", curr_counter_value, target_counter);
 
     bool led_state = false;
-    time_t start_time = time(NULL);
     while (curr_counter_value < UINT32_MAX) {
         if (increment_counter(spi_connection, cs_pin, target_counter, hmac_key_register, curr_counter_value)) {
             printf("Error: increment failed at counter value %u for counter %u\n", curr_counter_value, target_counter);
@@ -60,11 +59,6 @@ int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const un
             cyw43_arch_gpio_put(led_pin, led_state);
         }
 
-        if ((next_counter_value / 1000000) > (curr_counter_value / 1000000)) {
-            const time_t next_time = time(NULL);
-            printf("Incrementing the counter to %u took %lf seconds\n", next_counter_value, difftime(next_time, start_time));
-            start_time = next_time;
-        }
         curr_counter_value = next_counter_value;
     }
 
@@ -74,15 +68,15 @@ int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const un
 int main()
 {
     stdio_init_all();
-    sleep_ms(1000);
-    printf("Device is starting\n");
-
     if (cyw43_arch_init()) {
         printf("Wi-Fi init failed\n");
         return 1;
     }
+
+    sleep_ms(1000);
+    printf("Device is starting\n");
     
-    spi_init(spi0, 50U * 1000 * 1000);
+    spi_init(spi0, 1U * 1000 * 1000);
     gpio_set_function(PICO_DEFAULT_SPI_RX_PIN, GPIO_FUNC_SPI);
     gpio_set_function(PICO_DEFAULT_SPI_SCK_PIN, GPIO_FUNC_SPI);
     gpio_set_function(PICO_DEFAULT_SPI_TX_PIN, GPIO_FUNC_SPI);

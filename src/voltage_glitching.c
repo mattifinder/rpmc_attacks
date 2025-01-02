@@ -79,10 +79,6 @@ static int glitch_increment(void * const spi_connection,
                     printf("%02x", ((uint8_t *)&full_status)[i]);
                 printf("\n");
                 return 0;
-            } else if (status == 0x80) {
-                // In this case the chip has locked up
-                // Updating the hmac key register usually works
-                return 2;
             }
         }
     }
@@ -97,6 +93,7 @@ static int setup_increment_glitch(void * const spi_connection, const unsigned in
                                                     0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa};
     const uint8_t key_data[RPMC_KEY_DATA_LENGTH] = {0x00, 0x00, 0x00, 0x00};
     const uint8_t target_counter = 0;
+    int ret = 0;
 
     uint8_t hmac_key_register[RPMC_HMAC_KEY_LENGTH];
     if (mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), root_key, RPMC_HMAC_KEY_LENGTH, key_data, RPMC_KEY_DATA_LENGTH, hmac_key_register)) {
@@ -104,45 +101,40 @@ static int setup_increment_glitch(void * const spi_connection, const unsigned in
         return 1;
     }
 
+    // This message is always the same for the same key data
+    if (update_hmac_key_register(spi_connection, cs_pin, target_counter, hmac_key_register, key_data)) {
+        printf("Error: could not update hmac key register\n");
+        return 1;
+    }
+
+    uint32_t curr_counter_value;
+    // This message changes depending on the key data value used in the previous update hmac key command
+    // But if we catch the previous update hmac key command, we also know the get counter message
+    // We just can't validate the signature without the root key. But that doesn't matter, since we can still read the counter value
+    if (get_counter_value(spi_connection, cs_pin, target_counter, hmac_key_register, &curr_counter_value)) {
+        printf("Error: could not get old counter values\n");
+        return 1;
+    }
+
     size_t increments = 0;
-    bool failed_once = false;
     const uint64_t start = time_us_64();
-    while (increments < 10) {
-        // This message is always the same for the same key data
-        if (update_hmac_key_register(spi_connection, cs_pin, target_counter, hmac_key_register, key_data)) {
-            printf("Error: could not update hmac key register\n");
-            return 1;
-        }
-
-        uint32_t curr_counter_value;
-        // This message changes depending on the key data value used in the previous update hmac key command
-        // But if we catch the previous update hmac key command, we also know the get counter message
-        // We just can't validate the signature without the root key. But that doesn't matter, since we can still read the counter value
-        if (get_counter_value(spi_connection, cs_pin, target_counter, hmac_key_register, &curr_counter_value)) {
-            printf("Error: could not get old counter values\n");
-            return 1;
-        }
-
+    while (increments < 1000) {
         printf("Trying to glitch %u\n", curr_counter_value);
         if (glitch_increment(spi_connection, cs_pin, target_counter, curr_counter_value)) {
-            if (failed_once) {
-                printf("Failed\n");
-                break;
-            }
-            failed_once = true;
-        } else {
-            failed_once = false;
-            increments++;
+            printf("Failed\n");
+            ret = 1;
+            break;
         }
+
+        increments++;
     }
     const uint64_t time_taken = time_us_64() - start;
 
-
-    printf("Incrementing the counter by %u took %" PRIu64 " us (%" PRIu64 " us per increment)\n", increments, time_taken, time_taken / increments);
+    if (increments > 0)
+        printf("Incrementing the counter by %u took %" PRIu64 " us (%" PRIu64 " us per increment)\n", increments, time_taken, time_taken / increments);
     
-    return 0;
+    return ret;
 }
-
 
 void __time_critical_func(core1_glitch_pulldown_loop)(void)
 {
@@ -168,13 +160,12 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
 int main()
 {
     stdio_init_all();
-    sleep_ms(1000);
-    printf("Device is starting\n");
-
     if (cyw43_arch_init()) {
         printf("Wi-Fi init failed\n");
         return 1;
     }
+    sleep_ms(1000);
+    printf("Device is starting\n");
     
     spi_init(spi0, 1U * 1000 * 1000);
     gpio_set_function(PICO_DEFAULT_SPI_RX_PIN, GPIO_FUNC_SPI);
@@ -194,6 +185,7 @@ int main()
     gpio_init(TRANSMIT_GLITCH_PIN);
     gpio_put(TRANSMIT_GLITCH_PIN, 0);
     gpio_set_dir(TRANSMIT_GLITCH_PIN, GPIO_OUT);
+    bi_decl(bi_1pin_with_name(TRANSMIT_GLITCH_PIN, "GLITCH PIN"));
 
     // Setup second core to pull the glitch pin down after a recieved countdown
     multicore_reset_core1();

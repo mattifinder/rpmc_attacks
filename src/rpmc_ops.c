@@ -58,14 +58,10 @@ void get_full_rpmc_status(void * spi_connection, unsigned int cs_pin, struct rpm
 
 void poll_until_finished(void * const spi_connection, const unsigned int cs_pin)
 {
-    uint8_t status;
-    int timeout = 10;
-
-    do {
-        // according to specs this is the typical time it take to increment the counter
-        sleep_us(80);
-        status = get_rpmc_status(spi_connection, cs_pin);
-    } while (status & 1 && timeout-- > 0);
+    sleep_us(50);
+    while (get_rpmc_status(spi_connection, cs_pin) & 1) {
+        sleep_us(100);
+    } 
 }
 
 int update_hmac_key_register(void * const spi_connection,
@@ -98,7 +94,7 @@ int get_counter_value(void * const spi_connection,
                       const unsigned int cs_pin,
                       const uint8_t target_counter,
                       const uint8_t hmac_key[RPMC_HMAC_KEY_LENGTH],
-                      uint32_t * value)
+                      uint32_t * const value)
 {
 	const unsigned int signature_offset = RPMC_OP1_MSG_HEADER_LENGTH + RPMC_TAG_LENGTH;
     // Tag is whatever it gets initialized as
@@ -146,10 +142,7 @@ int get_counter_value(void * const spi_connection,
         return 2;
     }
 
-    *value = full_status.counter_data[0] ;
-    *value = (*value << 8) | full_status.counter_data[1];
-    *value = (*value << 8) | full_status.counter_data[2];
-    *value = (*value << 8) | full_status.counter_data[3];
+    *value = (full_status.counter_data[0] << 24) | (full_status.counter_data[1] << 16) | (full_status.counter_data[2] << 8) | full_status.counter_data[3];
 
     return 0;
 }
