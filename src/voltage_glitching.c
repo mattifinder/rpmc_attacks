@@ -87,12 +87,12 @@ static int glitch_increment(void * const spi_connection,
 
 static int setup_increment_glitch(void * const spi_connection, const unsigned int cs_pin)
 {
-    const uint8_t root_key[RPMC_HMAC_KEY_LENGTH] = {0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
-                                                    0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
-                                                    0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
-                                                    0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa};
+    const uint8_t root_key[RPMC_HMAC_KEY_LENGTH] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     const uint8_t key_data[RPMC_KEY_DATA_LENGTH] = {0x00, 0x00, 0x00, 0x00};
-    const uint8_t target_counter = 0;
+    const uint8_t target_counter = 1;
     int ret = 0;
 
     uint8_t hmac_key_register[RPMC_HMAC_KEY_LENGTH];
@@ -118,7 +118,7 @@ static int setup_increment_glitch(void * const spi_connection, const unsigned in
 
     size_t increments = 0;
     const uint64_t start = time_us_64();
-    while (increments < 1000) {
+    while (increments < 1) {
         printf("Trying to glitch %u\n", curr_counter_value);
         if (glitch_increment(spi_connection, cs_pin, target_counter, curr_counter_value)) {
             printf("Failed\n");

@@ -1,12 +1,10 @@
 cmake_minimum_required(VERSION 3.13...3.27)
 
-set(PICO_BOARD pico_w)
-
 # initialize the SDK based on PICO_SDK_PATH
 # note: this must happen before project()
 include(pico_sdk_import.cmake)
 
-project(bachelor_thesis)
+project(rpmc_glitch_setup)
 
 # initialize the Raspberry Pi Pico SDK
 pico_sdk_init()
@@ -41,3 +39,11 @@ target_link_libraries(voltage_glitching PRIVATE rpmc_ops pico_stdlib pico_mbedtl
 pico_enable_stdio_usb(voltage_glitching 1)
 pico_enable_stdio_uart(voltage_glitching 0)
 pico_add_extra_outputs(voltage_glitching)
+
+# serprog_glitch
+add_executable(serprog_glitch src/serprog_with_glitch.c)
+target_include_directories(serprog_glitch PRIVATE include)
+target_link_libraries(serprog_glitch PRIVATE pico_stdlib hardware_spi pico_multicore)
+pico_enable_stdio_usb(serprog_glitch 1)
+pico_enable_stdio_uart(serprog_glitch 0)
+pico_add_extra_outputs(serprog_glitch)
