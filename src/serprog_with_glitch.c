@@ -219,7 +219,7 @@ void process(spi_inst_t * spi, int command) {
 void __time_critical_func(core1_glitch_pulldown_loop)(void)
 {
     while (true) {
-        uint32_t glitch_cycles = multicore_fifo_pop_blocking();
+        volatile uint32_t glitch_cycles = multicore_fifo_pop_blocking();
         // Synchronize with core0
         multicore_fifo_push_blocking(0);
 
@@ -228,7 +228,7 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
         
         gpio_put(GLITCH_PIN, 1);
         // Add some delay to have our gate driver actually recognize the signal
-        asm volatile("nop\nnop\nnop\nnop\nnop\nnop");
+        asm volatile("nop\nnop\nnop\nnop\nnop");
         gpio_put(GLITCH_PIN, 0);
 
         // Synchronize with core0
@@ -241,36 +241,36 @@ int main() {
     bi_decl(bi_program_description("Flashrom/serprog compatible firmware for the Raspberry Pi Pico W.\n"
                                    "Extended to allow for the transmission of glitch cycles"));
     bi_decl(bi_program_url("https://github.com/EratesXD/RPMC_glitch_setup"));
-    bi_decl(bi_1pin_with_name(PIN_MISO, "MISO"));
-    bi_decl(bi_1pin_with_name(PIN_MOSI, "MOSI"));
-    bi_decl(bi_1pin_with_name(PIN_SCK, "SCK"));
     bi_decl(bi_1pin_with_name(PIN_CS, "CS"));
+    bi_decl(bi_1pin_with_name(GLITCH_PIN, "GLITCH PIN"));
+    bi_decl(bi_3pins_with_func(PIN_MISO, PIN_SCK, PIN_MOSI, GPIO_FUNC_SPI));
 
     stdio_init_all();
-
     stdio_set_translate_crlf(&stdio_usb, false);
 
     spi_init(spi0, 1000 * 1000);
     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
     gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
-    // Make the SPI pins available to picotool
-    bi_decl(bi_3pins_with_func(PIN_MISO, PIN_SCK, PIN_MOSI, GPIO_FUNC_SPI));
 
     // Glitch pin shorts the voltage of the chip to ground when it is set high
     gpio_init(GLITCH_PIN);
     gpio_put(GLITCH_PIN, 0);
     gpio_set_dir(GLITCH_PIN, GPIO_OUT);
-    bi_decl(bi_1pin_with_name(GLITCH_PIN, "GLITCH PIN"));
-
-    // Setup second core to pull the glitch pin down after a recieved countdown
-    multicore_reset_core1();
-    multicore_launch_core1(core1_glitch_pulldown_loop);
 
     // Initialize CS
     gpio_init(PIN_CS);
     gpio_put(PIN_CS, 1);
     gpio_set_dir(PIN_CS, GPIO_OUT);
+
+    // Setup second core to pull the glitch pin down after a recieved countdown
+    multicore_reset_core1();
+    multicore_launch_core1(core1_glitch_pulldown_loop);
+
+    // Apparently this is needed to initialize the MOSFET
+    gpio_put(GLITCH_PIN, 1);
+    sleep_ms(200);
+    gpio_put(GLITCH_PIN, 0);
 
     // Command handling
     while(true) {
