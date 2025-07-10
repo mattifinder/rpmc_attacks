@@ -1,4 +1,4 @@
-# RPMC glitch setup
+# RPMC Attacks
 
 This repository contains code useful for attacking RPMC-capable SPI flash chips.
 
@@ -8,12 +8,12 @@ Projects are tested on the **pico W**.
 
 ## Subprojects
 
-### overflow:
+### overflow
 
-This project is used to increment a counter to a value of UINT32_MAX *hopefully* allowing for a later wrap back to 0.
-Alternatively `pocs/counter_overflow.py` can be use as well. 
+This project is used to increment a counter to a value of *UINT32\_MAX* hopefully allowing for an overflow back to 0.
+Alternatively `pocs/counter_overflow.py` can be used as well. 
 
-### serprog_glitch:
+### serprog\_glitch
 
 This project allows for quicker voltage glitching iteration by receiving the delay used in the voltage glitch via serial.
 It is meant to be used in conjuctions with some of the scripts found in the `pocs` directory.
