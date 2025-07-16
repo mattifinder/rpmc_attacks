@@ -17,6 +17,21 @@ def _rpmc_sign_and_send(chip, msg: bytes, key: bytes, glitch_cycles: int | None 
         pass
 
 
+def rpmc_write_root_key(chip, key: bytes, counter_address: int) -> None:
+    if len(key) != 32:
+        raise ValueError('key must be 32 bytes')
+
+    msg = b'\x9b\x00' + counter_address.to_bytes(1) + b'\x00' + key
+    msg += HMAC(key, msg, hashlib.sha256).digest()[4:]
+
+    while ((status := chip.exchange(status_cmd, 1)[0]) & 1) != 0:
+        pass
+
+    if status != 0x80:
+        raise RuntimeError(f'Write root key failed with status {status:#010b}')
+
+
+
 def rpmc_update_hmac_key(chip, key: bytes, counter_address: int, key_data: bytes) -> None:
     if len(key_data) != 4:
         raise ValueError('Key data must be 4 bytes long')
