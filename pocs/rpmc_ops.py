@@ -31,13 +31,15 @@ def rpmc_write_root_key(chip, key: bytes, counter_address: int) -> None:
         raise RuntimeError(f'Write root key failed with status {status:#010b}')
 
 
-
-def rpmc_update_hmac_key(chip, key: bytes, counter_address: int, key_data: bytes) -> None:
+def rpmc_update_hmac_key(chip, key: bytes,
+                         counter_address: int,
+                         key_data: bytes,
+                         glitch_cycles: int | None = None) -> None:
     if len(key_data) != 4:
         raise ValueError('Key data must be 4 bytes long')
 
     msg = b'\x9b\x01' + counter_address.to_bytes(1) + b'\x00' + key_data
-    _rpmc_sign_and_send(chip, msg, key)
+    _rpmc_sign_and_send(chip, msg, key, glitch_cycles)
 
     status = chip.exchange(status_cmd, 1)[0]
     if status != 0x80:

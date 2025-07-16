@@ -57,6 +57,7 @@ def glitch_increment_counter(target_counter: int, attempts: int = 1):
 
 
 def leak_hmac_key(target_counter: int):
+    start = datetime.now()
     key_data = b'\x00\x00\x00\x00'
     # This key is just needed to compare the results against
     key = HMAC(root_key, key_data, hashlib.sha256).digest()
@@ -79,6 +80,8 @@ def leak_hmac_key(target_counter: int):
             if full_status.endswith(key):
                 print(f'Found hmac key')
                 break
+
+    print(f'Took {(datetime.now() - start).microseconds}us')
 
 
 if __name__ == '__main__':
