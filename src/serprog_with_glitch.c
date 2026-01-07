@@ -42,11 +42,11 @@
 #define S_CMD_S_SPI_FREQ	0x14	/* Set SPI clock frequency			*/
 #define S_CMD_S_PIN_STATE	0x15	/* Enable/disable output drivers		*/
 
-#define GLITCH_PIN 15
-#define PIN_MISO PICO_DEFAULT_SPI_RX_PIN
-#define PIN_MOSI PICO_DEFAULT_SPI_TX_PIN
-#define PIN_SCK PICO_DEFAULT_SPI_SCK_PIN
-#define PIN_CS PICO_DEFAULT_SPI_CSN_PIN
+#define GLITCH_PIN 17
+#define PIN_MISO 0
+#define PIN_MOSI 3
+#define PIN_SCK 2
+#define PIN_CS 1
 #define BUS_SPI         (1 << 3)
 #define S_SUPPORTED_BUS   BUS_SPI
 #define S_CMD_MAP ( \
@@ -228,7 +228,14 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
         
         gpio_put(GLITCH_PIN, 1);
         // Add some delay to have our gate driver actually recognize the signal
+#if PICO_PLATFORM == rp2350
+        asm volatile("nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop");
+        asm volatile("nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop");
+#elif PICO_PLATFORM == rp2040
         asm volatile("nop\nnop\nnop\nnop\nnop");
+#else
+        #error "Unsupported build target, please set correct target board"
+#endif 
         gpio_put(GLITCH_PIN, 0);
 
         // Synchronize with core0
@@ -266,11 +273,6 @@ int main() {
     // Setup second core to pull the glitch pin down after a recieved countdown
     multicore_reset_core1();
     multicore_launch_core1(core1_glitch_pulldown_loop);
-
-    // Apparently this is needed to initialize the MOSFET
-    gpio_put(GLITCH_PIN, 1);
-    sleep_ms(200);
-    gpio_put(GLITCH_PIN, 0);
 
     // Command handling
     while(true) {
