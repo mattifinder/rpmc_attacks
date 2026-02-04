@@ -87,20 +87,38 @@ def rpmc_get_status(chip) -> bytes:
     return chip.exchange(status_cmd, 49)
 
 
+def parse_programmer(value: str):
+    if value == 'serprog':
+        from serprog import Serprog
+        return Serprog('/dev/ttyACM0', 1_000_000)
+    elif value == 'tigard':
+        from pyftdi.spi import SpiController
+        spi = SpiController()
+        spi.configure('ftdi://ftdi:2232h/2')
+        return spi.get_port(cs=0, freq=1_000_000)
+    else:
+        raise ValueError(f'Unknown programmer {value}')
+
+
 def parse_args():
-    args = argparse.ArgumentParser(prog='RPMC enterer')
-    args.add_argument('operation')
-    args.add_argument('-k', '--key', required=True, type=str)
+    args = argparse.ArgumentParser(prog='RPMC command tool')
+    args.add_argument('operation', help='update, get, or increment')
+    args.add_argument('-k', '--key', required=True, type=str, help='HMAC key')
     args.add_argument('-c', '--counter', required=True, type=int)
-    args.add_argument('--key-data', required=False, type=lambda x: int(x, 0), default=0)
+    args.add_argument('--key-data',
+                      required=False,
+                      type=lambda x: int(x, 0).to_bytes(4),
+                      default=b'\x00\x00\x00\x00',
+                      help='e.g. 0x12345678')
+    args.add_argument('-p', '--programmer',
+                      required=True,
+                      type=parse_programmer,
+                      help='serprog, or tigard')
     return args.parse_args()
 
 
 def main():
     args = parse_args()
-
-    # TODO: add possibility for other programmers
-    chip = serprog.Serprog('/dev/ttyACM0', 1_000_000)
 
     with open(args.key, 'rb') as f:
         key = f.read()
@@ -108,14 +126,13 @@ def main():
 
     match args.operation:
         case 'update':
-            key_data = args.key_data.to_bytes(4)
-            rpmc_update_hmac_key(chip, key, args.counter, key_data)
-            print(f'Sucessfully updated hmac key for counter {args.counter} to key data {key_data.hex()}')
+            rpmc_update_hmac_key(args.programmer, key, args.counter, args.key_data)
+            print(f'Sucessfully updated hmac key for counter {args.counter} to key data 0x{args.key_data.hex()}')
         case 'get':
-            print(f'Got {rpmc_get_counter(chip, key, args.counter)} for counter {args.counter}')
+            print(f'Got {rpmc_get_counter(args.programmer, key, args.counter)} for counter {args.counter}')
         case 'increment':
-            old_value = rpmc_get_counter(chip, key, args.counter)
-            rpmc_increment_counter(chip, key, args.counter, old_value)
+            old_value = rpmc_get_counter(args.programmer, key, args.counter)
+            rpmc_increment_counter(args.programmer, key, args.counter, old_value)
             print(f'Incremented counter {args.counter} to {old_value + 1}')
         case _:
             print(f'unknown operation: {args.operation}')
@@ -123,5 +140,4 @@ def main():
 
 if __name__ == '__main__':
     import argparse
-    import serprog
     main()
