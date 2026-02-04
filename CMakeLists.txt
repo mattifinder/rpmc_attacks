@@ -30,3 +30,13 @@ target_link_libraries(serprog_glitch PRIVATE pico_stdlib hardware_spi pico_multi
 pico_enable_stdio_usb(serprog_glitch 1)
 pico_enable_stdio_uart(serprog_glitch 0)
 pico_add_extra_outputs(serprog_glitch)
+target_compile_definitions(serprog_glitch PRIVATE PROGRAM_MODE_FIXED_DELAY)
+
+# glitch_finder
+add_executable(glitch_finder src/serprog_with_glitch.c)
+target_include_directories(glitch_finder PRIVATE include)
+target_link_libraries(glitch_finder PRIVATE pico_stdlib hardware_spi pico_multicore)
+pico_enable_stdio_usb(glitch_finder 1)
+pico_enable_stdio_uart(glitch_finder 0)
+pico_add_extra_outputs(glitch_finder)
+target_compile_definitions(glitch_finder PRIVATE PROGRAM_MODE_FIND_DELAY)

@@ -13,8 +13,11 @@ def _rpmc_sign_and_send(chip, msg: bytes, key: bytes, glitch_cycles: int | None 
     else:
         chip.exchange(msg, 0)
 
+    counter = 0
     while (chip.exchange(status_cmd, 1)[0] & 1) != 0:
-        pass
+        if counter >= 20:
+            raise TimeoutError(f'Timeout reached while waiting for command to finish')
+        counter += 1
 
 
 def rpmc_write_root_key(chip, key: bytes, counter_address: int) -> None:
@@ -83,3 +86,42 @@ def rpmc_get_counter(chip, key: bytes,
 def rpmc_get_status(chip) -> bytes:
     return chip.exchange(status_cmd, 49)
 
+
+def parse_args():
+    args = argparse.ArgumentParser(prog='RPMC enterer')
+    args.add_argument('operation')
+    args.add_argument('-k', '--key', required=True, type=str)
+    args.add_argument('-c', '--counter', required=True, type=int)
+    args.add_argument('--key-data', required=False, type=lambda x: int(x, 0), default=0)
+    return args.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    # TODO: add possibility for other programmers
+    chip = serprog.Serprog('/dev/ttyACM0', 1_000_000)
+
+    with open(args.key, 'rb') as f:
+        key = f.read()
+        assert len(key) == 32
+
+    match args.operation:
+        case 'update':
+            key_data = args.key_data.to_bytes(4)
+            rpmc_update_hmac_key(chip, key, args.counter, key_data)
+            print(f'Sucessfully updated hmac key for counter {args.counter} to key data {key_data.hex()}')
+        case 'get':
+            print(f'Got {rpmc_get_counter(chip, key, args.counter)} for counter {args.counter}')
+        case 'increment':
+            old_value = rpmc_get_counter(chip, key, args.counter)
+            rpmc_increment_counter(chip, key, args.counter, old_value)
+            print(f'Incremented counter {args.counter} to {old_value + 1}')
+        case _:
+            print(f'unknown operation: {args.operation}')
+
+
+if __name__ == '__main__':
+    import argparse
+    import serprog
+    main()

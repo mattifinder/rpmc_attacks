@@ -43,10 +43,13 @@
 #define S_CMD_S_PIN_STATE	0x15	/* Enable/disable output drivers		*/
 
 #define GLITCH_PIN 17
-#define PIN_MISO 0
+#define PIN_MISO 4
 #define PIN_MOSI 3
 #define PIN_SCK 2
-#define PIN_CS 1
+#define PIN_CS 5
+#define PIN_1V8_OE 21
+#define PIN_DIR_A 22
+#define PIN_DIR_B 20
 #define BUS_SPI         (1 << 3)
 #define S_SUPPORTED_BUS   BUS_SPI
 #define S_CMD_MAP ( \
@@ -111,7 +114,7 @@ void read_from_spi(spi_inst_t * spi, const size_t rlen) {
     }
 }
 
-unsigned char write_buffer[512];
+unsigned char write_buffer[1024];
 
 void process(spi_inst_t * spi, int command) {
     switch(command) {
@@ -162,6 +165,11 @@ void process(spi_inst_t * spi, int command) {
         case S_CMD_O_SPIOP:
             {
                 uint32_t wlen = getu24();
+                // As of now you can't write commands larger than write_buffer
+                if (wlen > sizeof(write_buffer)) {
+                    wlen = sizeof(write_buffer);
+                }
+
                 uint32_t rlen = getu24();
 
                 cs_select(PIN_CS);
@@ -216,6 +224,39 @@ void process(spi_inst_t * spi, int command) {
     }
 }
 
+void __attribute__((optimize("O0"), noinline)) __time_critical_func(wait_delay)(const size_t delay)
+{
+    switch (delay)
+    {
+        case 12:
+            asm volatile("nop\nnop\nnop\nnop");  
+        case 11:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 10:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 9:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 8:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 7:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 6:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 5:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 4:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 3:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 2:
+            asm volatile("nop\nnop\nnop\nnop");
+        case 1:
+            asm volatile("nop\nnop\nnop\nnop");
+        default:
+            asm volatile("nop\nnop\nnop\nnop");
+    }
+}
+
 void __time_critical_func(core1_glitch_pulldown_loop)(void)
 {
     while (true) {
@@ -229,8 +270,7 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
         gpio_put(GLITCH_PIN, 1);
         // Add some delay to have our gate driver actually recognize the signal
 #if PICO_PLATFORM == rp2350
-        asm volatile("nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop");
-        asm volatile("nop\nnop\nnop\nnop\nnop\nnop\nnop\nnop");
+        wait_delay(10);
 #elif PICO_PLATFORM == rp2040
         asm volatile("nop\nnop\nnop\nnop\nnop");
 #else
@@ -240,6 +280,28 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
 
         // Synchronize with core0
         multicore_fifo_push_blocking(0);
+    }
+}
+
+void __time_critical_func(brute_force_delay)(void)
+{
+    while (true) {
+        for (size_t delay = 0; delay < 10; delay++){
+            volatile uint32_t glitch_cycles = multicore_fifo_pop_blocking();
+            // Synchronize with core0
+            multicore_fifo_push_blocking(0);
+
+            while (glitch_cycles-- > 0)
+                ;
+            
+            gpio_put(GLITCH_PIN, 1);
+            // Add some delay to have our gate driver actually recognize the signal
+            wait_delay(delay);
+            gpio_put(GLITCH_PIN, 0);
+
+            // Synchronize with core0
+            multicore_fifo_push_blocking(0);
+        }
     }
 }
 
@@ -270,9 +332,28 @@ int main() {
     gpio_put(PIN_CS, 1);
     gpio_set_dir(PIN_CS, GPIO_OUT);
 
+    // Initialize logic converter
+    gpio_init(PIN_DIR_A);
+    gpio_put(PIN_DIR_A, 1);
+    gpio_set_dir(PIN_DIR_A, GPIO_OUT);
+    
+    gpio_init(PIN_DIR_B);
+    gpio_put(PIN_DIR_B, 0);
+    gpio_set_dir(PIN_DIR_B, GPIO_OUT);
+    
+    gpio_init(PIN_1V8_OE);
+    gpio_put(PIN_1V8_OE, 0);
+    gpio_set_dir(PIN_1V8_OE, GPIO_OUT);
+    
     // Setup second core to pull the glitch pin down after a recieved countdown
     multicore_reset_core1();
+#ifdef PROGRAM_MODE_FIXED_DELAY
     multicore_launch_core1(core1_glitch_pulldown_loop);
+#elifdef PROGRAM_MODE_FIND_DELAY
+    multicore_launch_core1(brute_force_delay);
+#else
+    #error "No valid program mode defined"
+#endif
 
     // Command handling
     while(true) {
