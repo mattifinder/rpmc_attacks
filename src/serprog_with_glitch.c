@@ -228,37 +228,74 @@ void __attribute__((optimize("O0"), noinline)) __time_critical_func(wait_delay)(
 {
     switch (delay)
     {
+        case 30:
+            asm volatile("nop");
+        case 29:
+            asm volatile("nop");
+        case 28:
+            asm volatile("nop");
+        case 27:
+            asm volatile("nop");
+        case 26:
+            asm volatile("nop");
+        case 25:
+            asm volatile("nop");
+        case 24:
+            asm volatile("nop");
+        case 23:
+            asm volatile("nop");
+        case 22:
+            asm volatile("nop");  
+        case 21:
+            asm volatile("nop");
+        case 20:
+            asm volatile("nop");
+        case 19:
+            asm volatile("nop");
+        case 18:
+            asm volatile("nop");
+        case 17:
+            asm volatile("nop");
+        case 16:
+            asm volatile("nop");
+        case 15:
+            asm volatile("nop");
+        case 14:
+            asm volatile("nop");
+        case 13:
+            asm volatile("nop");
         case 12:
-            asm volatile("nop\nnop\nnop\nnop");  
+            asm volatile("nop");  
         case 11:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 10:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 9:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 8:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 7:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 6:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 5:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 4:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 3:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 2:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         case 1:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
         default:
-            asm volatile("nop\nnop\nnop\nnop");
+            asm volatile("nop");
     }
 }
 
 void __time_critical_func(core1_glitch_pulldown_loop)(void)
 {
+    volatile size_t delay = 19;
     while (true) {
         volatile uint32_t glitch_cycles = multicore_fifo_pop_blocking();
         // Synchronize with core0
@@ -269,13 +306,7 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
         
         gpio_put(GLITCH_PIN, 1);
         // Add some delay to have our gate driver actually recognize the signal
-#if PICO_PLATFORM == rp2350
-        wait_delay(10);
-#elif PICO_PLATFORM == rp2040
-        asm volatile("nop\nnop\nnop\nnop\nnop");
-#else
-        #error "Unsupported build target, please set correct target board"
-#endif 
+        wait_delay(delay);
         gpio_put(GLITCH_PIN, 0);
 
         // Synchronize with core0
@@ -286,7 +317,7 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
 void __time_critical_func(brute_force_delay)(void)
 {
     while (true) {
-        for (size_t delay = 0; delay < 10; delay++){
+        for (volatile size_t delay = 0; delay < 30; delay += 2){
             volatile uint32_t glitch_cycles = multicore_fifo_pop_blocking();
             // Synchronize with core0
             multicore_fifo_push_blocking(0);
@@ -313,6 +344,7 @@ int main() {
     bi_decl(bi_1pin_with_name(PIN_CS, "CS"));
     bi_decl(bi_1pin_with_name(GLITCH_PIN, "GLITCH PIN"));
     bi_decl(bi_3pins_with_func(PIN_MISO, PIN_SCK, PIN_MOSI, GPIO_FUNC_SPI));
+    bi_decl(bi_3pins_with_names(PIN_DIR_A, "3V3 to 1V8 enable", PIN_DIR_B, "1V8 to 3V3 enable", PIN_1V8_OE, "Logic converter output enable"));
 
     stdio_init_all();
     stdio_set_translate_crlf(&stdio_usb, false);
@@ -341,10 +373,10 @@ int main() {
     gpio_put(PIN_DIR_B, 0);
     gpio_set_dir(PIN_DIR_B, GPIO_OUT);
     
+    // configure 1V8 output manually
     gpio_init(PIN_1V8_OE);
-    gpio_put(PIN_1V8_OE, 0);
-    gpio_set_dir(PIN_1V8_OE, GPIO_OUT);
-    
+    gpio_pull_up(PIN_1V8_OE);
+
     // Setup second core to pull the glitch pin down after a recieved countdown
     multicore_reset_core1();
 #ifdef PROGRAM_MODE_FIXED_DELAY

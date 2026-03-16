@@ -8,6 +8,14 @@
 #include "pico/cyw43_arch.h"
 #include "rpmc_ops.h"
 
+#define PIN_MISO 4
+#define PIN_MOSI 3
+#define PIN_SCK 2
+#define PIN_CS 5
+#define PIN_1V8_OE 21
+#define PIN_DIR_A 22
+#define PIN_DIR_B 20
+
 inline int rpmc_ops_spi_write(void * spi_connection, const uint8_t * write_buffer, size_t write_amount)
 {
     return spi_write_blocking((spi_inst_t *)spi_connection, write_buffer, write_amount);
@@ -54,12 +62,13 @@ int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const un
         }
 
         const uint32_t next_counter_value = curr_counter_value + 1;
-        if ((next_counter_value / 10000) > (curr_counter_value / 10000)) {
+        if ((next_counter_value ^ curr_counter_value) & (1 << 14)) {
             led_state = !led_state;
             cyw43_arch_gpio_put(led_pin, led_state);
         }
 
         curr_counter_value = next_counter_value;
+        printf("Successfully incremented to %u\n", curr_counter_value);
     }
 
     return 0;
@@ -67,30 +76,39 @@ int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const un
 
 int main()
 {
+    bi_decl(bi_1pin_with_name(PIN_CS, "CS"));
+    bi_decl(bi_3pins_with_func(PIN_MISO, PIN_SCK, PIN_MOSI, GPIO_FUNC_SPI));
+    bi_decl(bi_3pins_with_names(PIN_DIR_A, "3V3 to 1V8 enable", PIN_DIR_B, "1V8 to 3V3 enable", PIN_1V8_OE, "Logic converter output enable"));
+
     stdio_init_all();
-    if (cyw43_arch_init()) {
-        printf("Wi-Fi init failed\n");
-        return 1;
-    }
+    stdio_set_translate_crlf(&stdio_usb, false);
 
-    sleep_ms(1000);
-    printf("Device is starting\n");
+    hard_assert(cyw43_arch_init() == 0);
+
+    spi_init(spi0, 1000 * 1000);
+    gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
+
+    // Initialize CS
+    gpio_init(PIN_CS);
+    gpio_put(PIN_CS, 1);
+    gpio_set_dir(PIN_CS, GPIO_OUT);
+
+    // Initialize logic converter
+    gpio_init(PIN_DIR_A);
+    gpio_put(PIN_DIR_A, 1);
+    gpio_set_dir(PIN_DIR_A, GPIO_OUT);
     
-    spi_init(spi0, 1U * 1000 * 1000);
-    gpio_set_function(PICO_DEFAULT_SPI_RX_PIN, GPIO_FUNC_SPI);
-    gpio_set_function(PICO_DEFAULT_SPI_SCK_PIN, GPIO_FUNC_SPI);
-    gpio_set_function(PICO_DEFAULT_SPI_TX_PIN, GPIO_FUNC_SPI);
-    // Make the SPI pins available to picotool
-    bi_decl(bi_3pins_with_func(PICO_DEFAULT_SPI_RX_PIN, PICO_DEFAULT_SPI_TX_PIN, PICO_DEFAULT_SPI_SCK_PIN, GPIO_FUNC_SPI));
+    gpio_init(PIN_DIR_B);
+    gpio_put(PIN_DIR_B, 0);
+    gpio_set_dir(PIN_DIR_B, GPIO_OUT);
+    
+    gpio_init(PIN_1V8_OE);
+    gpio_put(PIN_1V8_OE, 0);
+    gpio_set_dir(PIN_1V8_OE, GPIO_OUT);
 
-    // Chip select is active-low, so we'll initialise it to a driven-high state
-    gpio_init(PICO_DEFAULT_SPI_CSN_PIN);
-    gpio_put(PICO_DEFAULT_SPI_CSN_PIN, 1);
-    gpio_set_dir(PICO_DEFAULT_SPI_CSN_PIN, GPIO_OUT);
-    // Make the CS pin available to picotool
-    bi_decl(bi_1pin_with_name(PICO_DEFAULT_SPI_CSN_PIN, "SPI CS"));
-
-    for (int ret = 1; ret != 0; ret = loop(spi0, CYW43_WL_GPIO_LED_PIN, PICO_DEFAULT_SPI_CSN_PIN))
+    while (loop(spi0, CYW43_WL_GPIO_LED_PIN, PIN_CS))
         ;
 
     spi_deinit(spi0);

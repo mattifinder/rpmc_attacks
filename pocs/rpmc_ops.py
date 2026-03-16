@@ -1,4 +1,5 @@
 import hashlib
+import time
 from hmac import HMAC
 import random
 
@@ -18,6 +19,7 @@ def _rpmc_sign_and_send(chip, msg: bytes, key: bytes, glitch_cycles: int | None 
         if counter >= 20:
             raise TimeoutError(f'Timeout reached while waiting for command to finish')
         counter += 1
+        time.sleep(0.001)
 
 
 def rpmc_write_root_key(chip, key: bytes, counter_address: int) -> None:
