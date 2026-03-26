@@ -94,7 +94,7 @@ void init_spi_reader()
 
 void init_spi_writer()
 {
-    spi_init(OUTPUT_SPI, 10 * 1000 * 1000);
+    spi_init(OUTPUT_SPI, 32 * 1000 * 1000);
     spi_set_slave(OUTPUT_SPI, true);
     // The spi set format function seems not work as specified in the documentation
     spi_set_format(OUTPUT_SPI, 8, SPI_MSB_FIRST, SPI_CPHA_1, 1);
@@ -258,6 +258,51 @@ void rpmc_interpose_get_core1()
     }
 }
 
+void rpmc_interpose_increment_continous(void)
+{
+    while (true) {
+        bool rpmc_received = false;
+        while (!rpmc_received){
+            const static uint8_t status[] = {0xff, 0x00,
+                                            0xff,
+                                            0xff, 0x02,
+                                            0xff, // longer but who cares
+                                            0xff, 0x00};
+            const static size_t status_length[] = {2, 1, 2, 1, 2};
+            const uint8_t * status_pos = status;
+            
+            for (size_t counter = 0; counter < count_of(status_length); counter++) {
+                if (counter == 1) {
+                    uint8_t rx[1];
+                    spi_write_read_blocking(OUTPUT_SPI, status_pos, rx, status_length[counter]);
+                    if (rx[0] == 0x9b) {
+                        rpmc_received = true;
+                        break;
+                    }
+                } else {
+                    spi_write_blocking(OUTPUT_SPI, status_pos, status_length[counter]);
+                }
+
+                status_pos += status_length[counter];
+            }
+        }
+        {           
+            const static uint8_t status[] = {0xff, // to finish the rpmc transmission
+                                             0xff, 0x00,
+                                             0xff, 0x00,
+                                             0xff, 0xff, 0x80,
+                                             0xff, 0x00};
+            const static size_t status_length[] = {1, 2, 2, 3, 2};
+            const uint8_t * status_pos = status;
+            
+            for (size_t counter = 0; counter < count_of(status_length); counter++) {
+                spi_write_blocking(OUTPUT_SPI, status_pos, status_length[counter]);
+                status_pos += status_length[counter];
+            }
+        }
+    }
+}
+
 int main()
 {
     stdio_init_all();
@@ -266,11 +311,17 @@ int main()
     init_spi_reader();
     init_spi_writer();
 
-    //multicore_launch_core1(rpmc_interpose_increment_core1);
-    //rpmc_interpose_increment_core0();
+    // multicore_launch_core1(rpmc_interpose_increment_core1);
+    // rpmc_interpose_increment_core0();
 
-    multicore_launch_core1(rpmc_interpose_get_core1);
-    rpmc_interpose_get_core0();
+    //multicore_launch_core1(rpmc_interpose_get_core1);
+    //rpmc_interpose_get_core0();
+
+    // interpose();
+    // rpmc_interpose_increment_continous();
+
+    while (true)
+        tight_loop_contents();
 
     return 0;
 }
