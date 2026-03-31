@@ -48,6 +48,7 @@ target_compile_definitions(glitch_finder PRIVATE PROGRAM_MODE_FIND_DELAY)
 # interposer
 add_executable(interposer src/interposer.c)
 target_include_directories(interposer PRIVATE include)
-target_link_libraries(interposer PRIVATE pico_stdlib hardware_spi pico_multicore pico_mbedtls)
+target_link_libraries(interposer PRIVATE pico_stdlib hardware_spi hardware_pio pico_multicore pico_mbedtls)
+pico_generate_pio_header(interposer ${CMAKE_CURRENT_LIST_DIR}/src/spi_sniff.pio)
 pico_enable_stdio_usb(interposer 1)
 pico_enable_stdio_uart(interposer 0)

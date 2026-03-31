@@ -5,6 +5,7 @@
 #include <mbedtls/md.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "spi_sniff.pio.h"
 
 
 #define PIN_N_MUX_EN 16
@@ -52,6 +53,17 @@ void error(const char * msg)
     }
 }
 
+static inline void __time_critical_func(interpose)()
+{
+    gpio_set_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
+    multicore_fifo_push_blocking(132);
+}
+
+static inline void __time_critical_func(stop_interpose)()
+{
+    gpio_clr_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
+}
+
 void init_mux()
 {
     gpio_init(PIN_N_MUX_EN);
@@ -82,14 +94,16 @@ void init_lls()
 
 void init_spi_reader()
 {
-    spi_init(CAPTURE_SPI, 10 * 1000 * 1000);
-    spi_set_slave(CAPTURE_SPI, true);
-    // The spi set format function seems not work as specified in the documentation
-    spi_set_format(CAPTURE_SPI, 8, SPI_MSB_FIRST, SPI_CPHA_1, 1);
+    // spi_init(CAPTURE_SPI, 10 * 1000 * 1000);
+    // spi_set_slave(CAPTURE_SPI, true);
+    // // The spi set format function seems not work as specified in the documentation
+    // spi_set_format(CAPTURE_SPI, 8, SPI_MSB_FIRST, SPI_CPHA_1, 1);
 
-    gpio_set_function(PIN_CHIP_SPI_CLK, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_CHIP_SPI_CS, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_CHIP_SPI_READ_RX, GPIO_FUNC_SPI);
+    // gpio_set_function(PIN_CHIP_SPI_CLK, GPIO_FUNC_SPI);
+    // gpio_set_function(PIN_CHIP_SPI_CS, GPIO_FUNC_SPI);
+    // gpio_set_function(PIN_CHIP_SPI_READ_RX, GPIO_FUNC_SPI);
+
+    spi_sniff_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_SPI_READ_RX);
 }
 
 void init_spi_writer()
@@ -105,21 +119,12 @@ void init_spi_writer()
     gpio_set_function(PIN_PICO_BOARD_SPI_RX, GPIO_FUNC_SPI);
 }
 
-static inline void __time_critical_func(interpose)()
-{
-    gpio_set_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
-}
-
-static inline void __time_critical_func(stop_interpose)()
-{
-    gpio_clr_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
-}
-
-void rpmc_interpose_increment_core0()
+void __time_critical_func(rpmc_interpose_increment_core0)()
 {
     enum trigger_state {
         INITIAL,
-        RPMC_OP_RECIEVED
+        RPMC_OP_RECIEVED,
+        INCREMENT
     };
     enum trigger_state state = INITIAL;
 
@@ -129,32 +134,46 @@ void rpmc_interpose_increment_core0()
 
         switch (state) {
             case INITIAL:
-                {
-                    if (byte == 0x9b)
-                        state = RPMC_OP_RECIEVED;
-                }
+                if (byte == 0x9b)
+                    state = RPMC_OP_RECIEVED;
                 break;
             case RPMC_OP_RECIEVED:
-                {
-                    if (byte == 0x02) {
-                        interpose();
-                    }
+                if (byte == 0x02)
+                    state = INCREMENT;
+                else if (byte == 0x9b)
+                    state = RPMC_OP_RECIEVED;
+                else
                     state = INITIAL;
+                break;
+            case INCREMENT:
+                if (byte == 0x00) {
+                    interpose();
                 }
-                break;                
+                
+                state = INITIAL;
+                break;         
         }
-
     }
 }
 
-void rpmc_interpose_increment_core1(void)
+void __time_critical_func(rpmc_interpose_increment_core1)(void)
 {
-    const static uint8_t status_success[] = {0xff, 0xff, 0x80};
+    const static uint8_t status[] = {0xff, // to finish the rpmc transmission
+                                     0xff, 0x00,
+                                     0xff, 0x00,
+                                     0xff, 0xff, 0x80,
+                                     0xff, 0x00};
+    const static size_t status_length[] = {1, 2, 2, 3, 2};
     while (true) {
-        for (int i = 0; i < 3; i++) {
-            spi_write_blocking(OUTPUT_SPI, status_success, sizeof(status_success));
+        multicore_fifo_pop_blocking();
+
+        const uint8_t * status_pos = status;
+        
+        for (size_t counter = 0; counter < count_of(status_length); counter++) {
+            spi_write_blocking(OUTPUT_SPI, status_pos, status_length[counter]);
+            status_pos += status_length[counter];
         }
-        //printf("Stopping interposer\n");
+
         stop_interpose();
     }
 }
@@ -303,6 +322,25 @@ void rpmc_interpose_increment_continous(void)
     }
 }
 
+void core1_toggle_interpose_loop()
+{
+    bool interposing = false;
+    while (true)
+    {
+        stdio_getchar();
+
+        if (interposing) {
+            stop_interpose();
+            printf("stopping interpose\n");
+        } else {
+            interpose();
+            printf("interposing\n");
+        }
+
+        interposing = !interposing;
+    }
+}
+
 int main()
 {
     stdio_init_all();
@@ -311,14 +349,14 @@ int main()
     init_spi_reader();
     init_spi_writer();
 
-    // multicore_launch_core1(rpmc_interpose_increment_core1);
-    // rpmc_interpose_increment_core0();
+    multicore_launch_core1(rpmc_interpose_increment_core1);
+    spi_trigger(0x9b020000, interpose);
+
+    // multicore_launch_core1(rpmc_interpose_increment_continous);
+    // core1_toggle_interpose_loop();
 
     //multicore_launch_core1(rpmc_interpose_get_core1);
     //rpmc_interpose_get_core0();
-
-    // interpose();
-    // rpmc_interpose_increment_continous();
 
     while (true)
         tight_loop_contents();
