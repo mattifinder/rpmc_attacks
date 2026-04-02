@@ -5,7 +5,9 @@
 #include <mbedtls/md.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include "spi_sniff.pio.h"
+#include "psp_nvdata.h"
 
 
 #define PIN_N_MUX_EN 16
@@ -18,6 +20,7 @@ bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
 #define PIN_LLS_2DIR 19
 
 #define CAPTURE_SPI spi0
+#define MASTER_SPI CAPTURE_SPI
 #define PIN_CHIP_SPI_CLK 2
 #define PIN_CHIP_MASTER_SPI_RX 3
 #define PIN_CHIP_MASTER_SPI_TX 4
@@ -53,6 +56,14 @@ void error(const char * msg)
     }
 }
 
+inline uint32_t reverse(const uint32_t x)
+{
+    return ((x & UINT32_C(0x0000'00FF)) << 24) |
+           ((x & UINT32_C(0x0000'FF00)) <<  8) |
+           ((x & UINT32_C(0x00FF'0000)) >>  8) |
+           ((x & UINT32_C(0xFF00'0000)) >> 24); 
+}
+
 static inline void __time_critical_func(interpose)()
 {
     gpio_set_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
@@ -62,98 +73,6 @@ static inline void __time_critical_func(interpose)()
 static inline void __time_critical_func(stop_interpose)()
 {
     gpio_clr_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
-}
-
-void init_mux()
-{
-    gpio_init(PIN_N_MUX_EN);
-    gpio_put(PIN_N_MUX_EN, 0);
-    gpio_set_dir(PIN_N_MUX_EN, GPIO_OUT);
-
-    gpio_init(PIN_MUX_INTERPOSE);
-    gpio_put(PIN_MUX_INTERPOSE, 0);
-    gpio_set_dir(PIN_MUX_INTERPOSE, GPIO_OUT);
-    gpio_set_slew_rate(PIN_MUX_INTERPOSE, GPIO_SLEW_RATE_FAST);
-}
-
-void init_lls()
-{
-    gpio_init(PIN_N_LLS_OE);
-    gpio_put(PIN_N_LLS_OE, 0);
-    gpio_set_dir(PIN_N_LLS_OE, GPIO_OUT);
-
-    gpio_init(PIN_LLS_1DIR);
-    gpio_put(PIN_LLS_1DIR, 0);
-    gpio_set_dir(PIN_LLS_1DIR, GPIO_OUT);
-    gpio_set_slew_rate(PIN_LLS_1DIR, GPIO_SLEW_RATE_FAST);
-
-    gpio_init(PIN_LLS_2DIR);
-    gpio_put(PIN_LLS_2DIR, 0);
-    gpio_set_dir(PIN_LLS_2DIR, GPIO_OUT);
-}
-
-void init_spi_reader()
-{
-    // spi_init(CAPTURE_SPI, 10 * 1000 * 1000);
-    // spi_set_slave(CAPTURE_SPI, true);
-    // // The spi set format function seems not work as specified in the documentation
-    // spi_set_format(CAPTURE_SPI, 8, SPI_MSB_FIRST, SPI_CPHA_1, 1);
-
-    // gpio_set_function(PIN_CHIP_SPI_CLK, GPIO_FUNC_SPI);
-    // gpio_set_function(PIN_CHIP_SPI_CS, GPIO_FUNC_SPI);
-    // gpio_set_function(PIN_CHIP_SPI_READ_RX, GPIO_FUNC_SPI);
-
-    spi_sniff_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_SPI_READ_RX);
-}
-
-void init_spi_writer()
-{
-    spi_init(OUTPUT_SPI, 32 * 1000 * 1000);
-    spi_set_slave(OUTPUT_SPI, true);
-    // The spi set format function seems not work as specified in the documentation
-    spi_set_format(OUTPUT_SPI, 8, SPI_MSB_FIRST, SPI_CPHA_1, 1);
-
-    gpio_set_function(PIN_PICO_BOARD_SPI_CLK, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_PICO_BOARD_SPI_CS, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_PICO_BOARD_SPI_TX, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_PICO_BOARD_SPI_RX, GPIO_FUNC_SPI);
-}
-
-void __time_critical_func(rpmc_interpose_increment_core0)()
-{
-    enum trigger_state {
-        INITIAL,
-        RPMC_OP_RECIEVED,
-        INCREMENT
-    };
-    enum trigger_state state = INITIAL;
-
-    while (true) {
-        uint8_t byte;
-        spi_read_blocking(CAPTURE_SPI, 0xff, &byte, 1);
-
-        switch (state) {
-            case INITIAL:
-                if (byte == 0x9b)
-                    state = RPMC_OP_RECIEVED;
-                break;
-            case RPMC_OP_RECIEVED:
-                if (byte == 0x02)
-                    state = INCREMENT;
-                else if (byte == 0x9b)
-                    state = RPMC_OP_RECIEVED;
-                else
-                    state = INITIAL;
-                break;
-            case INCREMENT:
-                if (byte == 0x00) {
-                    interpose();
-                }
-                
-                state = INITIAL;
-                break;         
-        }
-    }
 }
 
 void __time_critical_func(rpmc_interpose_increment_core1)(void)
@@ -176,14 +95,6 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 
         stop_interpose();
     }
-}
-
-inline uint32_t reverse(const uint32_t x)
-{
-    return ((x & UINT32_C(0x0000'00FF)) << 24) |
-           ((x & UINT32_C(0x0000'FF00)) <<  8) |
-           ((x & UINT32_C(0x00FF'0000)) >>  8) |
-           ((x & UINT32_C(0xFF00'0000)) >> 24); 
 }
 
 void fill_response(union rpmc_full_status * response)
@@ -277,86 +188,210 @@ void rpmc_interpose_get_core1()
     }
 }
 
-void rpmc_interpose_increment_continous(void)
-{
-    while (true) {
-        bool rpmc_received = false;
-        while (!rpmc_received){
-            const static uint8_t status[] = {0xff, 0x00,
-                                            0xff,
-                                            0xff, 0x02,
-                                            0xff, // longer but who cares
-                                            0xff, 0x00};
-            const static size_t status_length[] = {2, 1, 2, 1, 2};
-            const uint8_t * status_pos = status;
-            
-            for (size_t counter = 0; counter < count_of(status_length); counter++) {
-                if (counter == 1) {
-                    uint8_t rx[1];
-                    spi_write_read_blocking(OUTPUT_SPI, status_pos, rx, status_length[counter]);
-                    if (rx[0] == 0x9b) {
-                        rpmc_received = true;
-                        break;
-                    }
-                } else {
-                    spi_write_blocking(OUTPUT_SPI, status_pos, status_length[counter]);
-                }
+#define FLASH_PAGE_SIZE         256
+#define FLASH_SECTOR_SIZE       4096
 
-                status_pos += status_length[counter];
-            }
+static inline void cs_select(uint cs_pin) {
+	asm volatile("nop \n nop \n nop"); // FIXME
+	gpio_put(cs_pin, 0);
+	asm volatile("nop \n nop \n nop"); // FIXME
+}
+
+static inline void cs_deselect(uint cs_pin) {
+	asm volatile("nop \n nop \n nop"); // FIXME
+	gpio_put(cs_pin, 1);
+	asm volatile("nop \n nop \n nop"); // FIXME
+}
+
+uint8_t __time_critical_func(get_flash_status)(spi_inst_t *spi, uint cs_pin)
+{
+    cs_select(cs_pin);
+    uint8_t cmd[] = {
+        0x05, // Read Status Register
+        0
+    };
+    uint8_t out[sizeof(cmd)];
+    spi_write_read_blocking(spi, cmd, out, sizeof(cmd));
+    cs_deselect(cs_pin);
+
+    return out[1];
+}
+
+void __time_critical_func(flash_erase)(spi_inst_t *spi, uint cs_pin, uint32_t addr) {
+	cs_select(cs_pin);
+	const uint8_t cmdbuf[] = {
+        0x21, // 4-byte addres sector erase
+        addr >> 24,
+        addr >> 16,
+        addr >> 8,
+        addr
+    };
+
+    spi_write_blocking(spi, cmdbuf, sizeof(cmdbuf));
+    //spi_read_blocking(spi, 0, buf, len);
+    cs_deselect(cs_pin);
+}
+
+void __time_critical_func(flash_write)(spi_inst_t *spi, uint cs_pin, uint32_t addr, const uint8_t * buf, const size_t len) {
+	cs_select(cs_pin);
+	const uint8_t cmdbuf[] = {
+		0x12, // 4-byte page program
+        addr >> 24,
+		addr >> 16,
+		addr >> 8,
+		addr
+	};
+
+	spi_write_blocking(spi, cmdbuf, sizeof(cmdbuf));
+	spi_write_blocking(spi, buf, len);
+	cs_deselect(cs_pin);
+}
+
+void __time_critical_func(flash_write_enable)(spi_inst_t *spi, uint cs_pin) {
+	cs_select(cs_pin);
+	const uint8_t cmdbuf[] = {
+		0x06, // flash write enable
+	};
+
+	spi_write_blocking(spi, cmdbuf, sizeof(cmdbuf));
+	cs_deselect(cs_pin);
+}
+
+void __time_critical_func(flash_wait_done)(spi_inst_t *spi, uint cs_pin) {
+    while (get_flash_status(spi, cs_pin) != 0)
+        sleep_us(100);
+}
+
+void write_segment(spi_inst_t * const out_spi, const unsigned int cs, const uint32_t base_addres, const size_t len , const uint8_t data[len])
+{
+    for (uint32_t offset = 0; offset < len; offset += FLASH_PAGE_SIZE) {
+        const uint32_t target_addr = base_addres + offset;
+
+        if(target_addr % FLASH_SECTOR_SIZE == 0){
+            flash_write_enable(out_spi, cs);
+            sleep_us(100);
+            flash_erase(out_spi, cs, target_addr);
+            sleep_us(100);
+            flash_wait_done(out_spi, cs);
+            printf("flash_erase: %x\n", target_addr);
         }
-        {           
-            const static uint8_t status[] = {0xff, // to finish the rpmc transmission
-                                             0xff, 0x00,
-                                             0xff, 0x00,
-                                             0xff, 0xff, 0x80,
-                                             0xff, 0x00};
-            const static size_t status_length[] = {1, 2, 2, 3, 2};
-            const uint8_t * status_pos = status;
-            
-            for (size_t counter = 0; counter < count_of(status_length); counter++) {
-                spi_write_blocking(OUTPUT_SPI, status_pos, status_length[counter]);
-                status_pos += status_length[counter];
-            }
-        }
+
+        flash_write_enable(out_spi, cs);
+        sleep_us(100);
+        flash_write(out_spi, cs, target_addr, data + offset, MIN(len - offset, FLASH_PAGE_SIZE));
+        sleep_us(100);
+        flash_wait_done(out_spi, cs);
+        printf("flash_write: %x\n", target_addr);
     }
 }
 
-void core1_toggle_interpose_loop()
+void reprogram_flash(spi_inst_t * const out_spi, const unsigned int cs)
 {
-    bool interposing = false;
-    while (true)
-    {
-        stdio_getchar();
+    write_segment(out_spi, cs, 0x10e0000, sizeof(psp_nvdata_bin), psp_nvdata_bin);
+    write_segment(out_spi, cs, 0x1100000, sizeof(psp_nvram_bin), psp_nvram_bin);
+    write_segment(out_spi, cs, 0x1060000, sizeof(nvrom_state_bin), nvrom_state_bin);
 
-        if (interposing) {
-            stop_interpose();
-            printf("stopping interpose\n");
-        } else {
-            interpose();
-            printf("interposing\n");
-        }
-
-        interposing = !interposing;
+    for (uint32_t start = 0x01102000; start  < 0x1100000 + 0x40000; start += FLASH_SECTOR_SIZE) {
+        flash_write_enable(out_spi, cs);
+        sleep_us(100);
+        flash_erase(out_spi, cs, start);
+        sleep_us(100);
+        flash_wait_done(out_spi, cs);
+        printf("flash_erase: %x\n", start);
     }
+}
+
+void init_mux()
+{
+    gpio_init(PIN_N_MUX_EN);
+    gpio_put(PIN_N_MUX_EN, 0); // mux is active low
+    gpio_set_dir(PIN_N_MUX_EN, GPIO_OUT);
+
+    gpio_init(PIN_MUX_INTERPOSE);
+    gpio_put(PIN_MUX_INTERPOSE, 0);
+    gpio_set_dir(PIN_MUX_INTERPOSE, GPIO_OUT);
+    gpio_set_slew_rate(PIN_MUX_INTERPOSE, GPIO_SLEW_RATE_FAST);
+}
+
+void init_lls(const bool lls1_dir, const bool lss2_dir)
+{
+    gpio_init(PIN_N_LLS_OE);
+    gpio_put(PIN_N_LLS_OE, 0);
+    gpio_set_dir(PIN_N_LLS_OE, GPIO_OUT);
+
+    gpio_init(PIN_LLS_1DIR);
+    gpio_put(PIN_LLS_1DIR, lls1_dir);
+    gpio_set_dir(PIN_LLS_1DIR, GPIO_OUT);
+    gpio_set_slew_rate(PIN_LLS_1DIR, GPIO_SLEW_RATE_FAST);
+
+    gpio_init(PIN_LLS_2DIR);
+    gpio_put(PIN_LLS_2DIR, lss2_dir);
+    gpio_set_dir(PIN_LLS_2DIR, GPIO_OUT);
+}
+
+void init_spi0_master()
+{
+    spi_init(CAPTURE_SPI, 1 * 1000 * 1000);
+
+    gpio_init(PIN_CHIP_SPI_CS);
+    gpio_put(PIN_CHIP_SPI_CS, 1);
+    gpio_set_dir(PIN_CHIP_SPI_CS, GPIO_OUT);
+
+    gpio_set_function(PIN_CHIP_SPI_CLK, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_CHIP_MASTER_SPI_RX , GPIO_FUNC_SPI);
+    gpio_set_function(PIN_CHIP_MASTER_SPI_TX , GPIO_FUNC_SPI);
+}
+
+void init_spi1_interposer()
+{
+    spi_init(OUTPUT_SPI, 32 * 1000 * 1000);
+    spi_set_slave(OUTPUT_SPI, true);
+    // The spi set format function seems not work as specified in the documentation
+    spi_set_format(OUTPUT_SPI, 8, SPI_MSB_FIRST, SPI_CPHA_1, 1);
+
+    gpio_set_function(PIN_PICO_BOARD_SPI_CLK, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_PICO_BOARD_SPI_CS, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_PICO_BOARD_SPI_TX, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_PICO_BOARD_SPI_RX, GPIO_FUNC_SPI);
 }
 
 int main()
 {
     stdio_init_all();
-    init_mux();
-    init_lls();
-    init_spi_reader();
-    init_spi_writer();
+    // TODO: write loop um die flash region zu overwriten
 
-    multicore_launch_core1(rpmc_interpose_increment_core1);
-    spi_trigger(0x9b020000, interpose);
+    switch (getchar()) {
+        // interpose amd 
+        case 'a':
+            init_mux();
+            init_lls(0, 0);
+            // initlialize spi trigger
+            // TODO test without other pin
+            spi_sniff_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_MASTER_SPI_RX);
+            init_spi1_interposer();
+            printf("Interposing AMD\n");
 
-    // multicore_launch_core1(rpmc_interpose_increment_continous);
-    // core1_toggle_interpose_loop();
-
-    //multicore_launch_core1(rpmc_interpose_get_core1);
-    //rpmc_interpose_get_core0();
+            multicore_launch_core1(rpmc_interpose_increment_core1);
+            spi_trigger(0x9b020000, interpose);
+            break;
+        case 'i':
+            // TODO
+            printf("Interposing Intel\n");
+            multicore_launch_core1(rpmc_interpose_get_core1);
+            rpmc_interpose_get_core0();
+            break;
+        case 'r':
+            init_lls(1, 0);
+            init_spi0_master();
+            
+            printf("Reprogramming flash sector\n");
+            reprogram_flash(MASTER_SPI, PIN_CHIP_SPI_CS);
+            break;
+        default: // do nothing just leave chip directly connected
+            init_mux();
+            printf("Just passing traffic through\n");
+            break;
+    }
 
     while (true)
         tight_loop_contents();
