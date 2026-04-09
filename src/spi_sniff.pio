@@ -62,7 +62,7 @@ static void spi_sniff_cleanup() {
     pio_remove_program(spi_sniff_pio, &spi_sniff_program, spi_sniff_offset);
     pio_sm_unclaim(spi_sniff_pio, spi_sniff_sm);
 
-    spi_sniff_inited = true;
+    spi_sniff_inited = false;
 }
 
 static int spi_sniff_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
@@ -100,7 +100,7 @@ static int spi_sniff_init(const unsigned int cs, const unsigned int clk, const u
     return true;
 }
 
-static int spi_trigger(uint32_t match, void (*callback)(void)) {
+static int spi_trigger(uint16_t match, void (*callback)(void)) {
     int rc = pio_sm_init(spi_sniff_pio, spi_sniff_sm, spi_sniff_offset + spi_sniff_offset_start, &spi_sniff_cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
@@ -109,7 +109,7 @@ static int spi_trigger(uint32_t match, void (*callback)(void)) {
     pio_sm_set_enabled(spi_sniff_pio, spi_sniff_sm, true);
     pio_sm_clear_fifos(spi_sniff_pio, spi_sniff_sm);
 
-    pio_sm_put_blocking(spi_sniff_pio, spi_sniff_sm, match >> 16);
+    pio_sm_put_blocking(spi_sniff_pio, spi_sniff_sm, match);
 
     while (true) {
         uint32_t read = pio_sm_get_blocking(spi_sniff_pio, spi_sniff_sm);

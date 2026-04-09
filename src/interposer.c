@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "spi_sniff.pio.h"
+#include "rpmc_sniffer.pio.h"
 #include "psp_nvdata.h"
 
 
@@ -33,20 +34,20 @@ bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
 #define PIN_PICO_BOARD_SPI_RX 12
 #define PIN_PICO_BOARD_SPI_CS 13
 
+#define HMAC_KEY_SIZE 32
 
 struct __attribute((__packed__)) rpmc_status_msg {
     uint8_t dummy[2];
     uint8_t status;
-	unsigned char tag[12];
+	uint8_t tag[12];
 	uint32_t counter_data;
-	unsigned char signature[32];
+	uint8_t signature[32];
 };
 
 union rpmc_full_status {
     struct rpmc_status_msg msg;
     uint32_t words[(sizeof(struct rpmc_status_msg) + 3) / 4]; // for easier transfer via fifo
 };
-
 
 void error(const char * msg)
 {
@@ -64,9 +65,14 @@ inline uint32_t reverse(const uint32_t x)
            ((x & UINT32_C(0xFF00'0000)) >> 24); 
 }
 
-static inline void __time_critical_func(interpose)()
+static inline void __time_critical_func(interpose_no_push)()
 {
     gpio_set_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
+}
+
+static inline void __time_critical_func(interpose)()
+{
+    interpose_no_push();
     multicore_fifo_push_blocking(132);
 }
 
@@ -97,76 +103,65 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
     }
 }
 
-void fill_response(union rpmc_full_status * response)
+static uint32_t counter_values[4] = {0, 0, 0, 0};
+const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
+    // Key slot 0
+    0xc8, 0x63, 0x76, 0x1d, 0x3e, 0xbe, 0xc4, 0x71,
+    0x6b, 0xe8, 0x13, 0x56, 0x9b, 0x22, 0xa3, 0xab,
+    0xbf, 0x30, 0xd3, 0x6e, 0x49, 0x1e, 0x58, 0x21,
+    0x2f, 0x1d, 0x3d, 0x56, 0x31, 0xa7, 0x2e, 0x0a,
+    // Key slot 1
+    0x1b, 0x57, 0xbe, 0x73, 0xb7, 0x48, 0xed, 0xc6,
+    0x77, 0x02, 0xfb, 0xa0, 0x7b, 0xfb, 0xb2, 0x69,
+    0xc7, 0x36, 0xe8, 0xc2, 0x95, 0x35, 0x4a, 0x98,
+    0x8b, 0xc5, 0xff, 0x5a, 0xe7, 0x4c, 0x20, 0x89,
+    // Key slot 2
+    0x84, 0x35, 0xd3, 0xff, 0x92, 0x04, 0x75, 0xb4,
+    0xb1, 0xc9, 0x4f, 0x21, 0x9c, 0x62, 0xa3, 0x54,
+    0xea, 0x3a, 0x02, 0x9d, 0x2c, 0x30, 0xaa, 0xaa,
+    0x2d, 0x25, 0x1e, 0x93, 0x74, 0x3e, 0x72, 0x9a,
+    // Key slot 3
+    0x4c, 0xfd, 0x6b, 0x7f, 0xbb, 0x05, 0xa6, 0xb4,
+    0x6d, 0xf2, 0x35, 0x03, 0xb2, 0x30, 0x2d, 0xa9,
+    0xfb, 0x59, 0xe7, 0x58, 0x2b, 0xa4, 0x2d, 0x5d,
+    0x03, 0x74, 0x03, 0x92, 0x3e, 0x2f, 0xeb, 0x28
+};
+
+void interpose_intel()
 {
-    const static uint8_t hmac_key[] = {0xc8, 0x63, 0x76, 0x1d, 0x3e, 0xbe, 0xc4, 0x71,
-                                       0x6b, 0xe8, 0x13, 0x56, 0x9b, 0x22, 0xa3, 0xab,
-                                       0xbf, 0x30, 0xd3, 0x6e, 0x49, 0x1e, 0x58, 0x21, 
-                                       0x2f, 0x1d, 0x3d, 0x56, 0x31, 0xa7, 0x2e, 0x0a};
-    static uint32_t counter_value = 1234;
-
-    response->msg.dummy[0] = 0xff;
-    response->msg.dummy[1] = 0xff;
-    response->msg.status = 0x80;
-    response->msg.counter_data = reverse(counter_value--);
-
-    mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                    hmac_key,
-                    sizeof(hmac_key),
-                    response->msg.tag,
-                    12 + 4,
-                    response->msg.signature);
-}
-
-void rpmc_interpose_get_core0()
-{
-    enum trigger_state {
-        INITIAL,
-        RPMC_OP_RECIEVED,
-        CAPTURING_GET,
-        COUNTER_ADDR
-    };
-    enum trigger_state state = INITIAL;
-
-
     while (true) {
-        uint8_t byte;
-        spi_read_blocking(CAPTURE_SPI, 0xff, &byte, 1);
+        struct rpmc_command_info info;
 
-        switch (state) {
-            case INITIAL:
-                if (byte == 0x9b)
-                    state = RPMC_OP_RECIEVED;
-                break;
-            case RPMC_OP_RECIEVED:
-                if (byte == 0x03) {
-                    state = CAPTURING_GET;
-                } else {
-                    state = INITIAL;
-                }
-                break;
-            case CAPTURING_GET:
-                state = COUNTER_ADDR;
-                break;
-            case COUNTER_ADDR:
-                {
-                    union rpmc_full_status response_buffer;
-                    spi_read_blocking(CAPTURE_SPI, 0xff, response_buffer.msg.tag, 12);
-                    interpose();
-                    fill_response(&response_buffer);
+        rpmc_interpose(&info);
+        trigger_get(interpose_no_push);
 
-                    for (int i = 0; i < count_of(response_buffer.words); i++)
-                        multicore_fifo_push_blocking(response_buffer.words[i]);
-                }
-                state = INITIAL;
-                break;
+        printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
+
+        union rpmc_full_status response;
+        response.msg.dummy[0] = 0xff;
+        response.msg.dummy[1] = 0xff;
+        response.msg.status = 0x80;
+        
+        if (info.kind == INCREMENT) {
+            counter_values[info.target_counter]++;
+        } else if (info.kind == GET) {
+            response.msg.counter_data = reverse(counter_values[info.target_counter]);
+            mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                            hmac_keys + HMAC_KEY_SIZE * info.target_counter,
+                            HMAC_KEY_SIZE,
+                            response.msg.tag,
+                            12 + 4,
+                            response.msg.signature);
         }
+
+        for (size_t i = 0; i < count_of(response.words); i++)
+            multicore_fifo_push_blocking(response.words[i]);
     }
 }
 
-void rpmc_interpose_get_core1()
+void interpose_intel_core1()
 {
-    const static uint8_t wait_msg[] = {0xff, 0xff, 0x01};
+    const static uint8_t wait_msg[] = {0xaa, 0xaa, 0xaa};
     const static uint8_t done_msg[] = {0xff, 0xff, 0x80};
     union rpmc_full_status response;
     size_t response_bytes_received = 0;
@@ -174,11 +169,11 @@ void rpmc_interpose_get_core1()
 
     while (true) {
         if (response_bytes_received < count_of(response.words))
-            spi_write_blocking(OUTPUT_SPI, wait_msg, sizeof(wait_msg));
+            interposer_send(wait_msg, sizeof(wait_msg));
         else {
             // This needs to be changed according to how the firmware reads out the counter value
-            spi_write_blocking(OUTPUT_SPI, done_msg, sizeof(done_msg));
-            spi_write_blocking(OUTPUT_SPI, (uint8_t *)&response.msg, sizeof(response.msg));
+            interposer_send(done_msg, sizeof(done_msg));
+            interposer_send((uint8_t *)&response.msg, sizeof(response.msg));
             stop_interpose();
             response_bytes_received = 0;
         }
@@ -344,10 +339,10 @@ void init_spi0_master()
 
 void init_spi1_interposer()
 {
-    spi_init(OUTPUT_SPI, 32 * 1000 * 1000);
+    spi_init(OUTPUT_SPI, 25 * 1000 * 1000);
     spi_set_slave(OUTPUT_SPI, true);
     // The spi set format function seems not work as specified in the documentation
-    spi_set_format(OUTPUT_SPI, 8, SPI_MSB_FIRST, SPI_CPHA_1, 1);
+    spi_set_format(OUTPUT_SPI, 24, 0, 1, 1);
 
     gpio_set_function(PIN_PICO_BOARD_SPI_CLK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_PICO_BOARD_SPI_CS, GPIO_FUNC_SPI);
@@ -359,26 +354,42 @@ int main()
 {
     stdio_init_all();
     // TODO: write loop um die flash region zu overwriten
-
+    goto i;
     switch (getchar()) {
         // interpose amd 
         case 'a':
             init_mux();
             init_lls(0, 0);
             // initlialize spi trigger
-            // TODO test without other pin
             spi_sniff_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_MASTER_SPI_RX);
             init_spi1_interposer();
             printf("Interposing AMD\n");
 
             multicore_launch_core1(rpmc_interpose_increment_core1);
-            spi_trigger(0x9b020000, interpose);
+            spi_trigger(UINT16_C(0x9b02), interpose);
+            break;
+        case 'd':
+            init_mux();
+            init_lls(0, 0);
+            interpose_no_push();
+            
+            interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_TX);
+
+            const static uint8_t wait_msg[] = {0xff, 0xff, 0x01};
+            for (;;)
+                interposer_send(wait_msg, 1);
+
             break;
         case 'i':
-            // TODO
+        i:
+            init_mux();
+            init_lls(0, 0);
+            rpmc_sniffer_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_MASTER_SPI_RX);
+            interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_TX);
+            
             printf("Interposing Intel\n");
-            multicore_launch_core1(rpmc_interpose_get_core1);
-            rpmc_interpose_get_core0();
+            multicore_launch_core1(interpose_intel_core1);
+            interpose_intel();
             break;
         case 'r':
             init_lls(1, 0);

@@ -1,0 +1,292 @@
+.program rpmc_sniffer
+
+; SPI Sniffer
+; When triggered, by a 32-bit value BITCOUNT in the TX fifo, this program
+; will wait for CS to go low and then sniff the next BITCOUNT bits from
+; MOSI. These are pushed to the RX fifo as multiples of 32-bits.
+;
+; FIFOs:
+; - TX holds 32-bit BITCOUNT values (autopull is enabled).
+; - RX transfers the sniffed bits (in 32-bit chunks) (autopush is enabled).
+; Pin mapping:
+; - in pins: 0 is SPI MOSI (gpio 3)
+; - uses gpio pins 2 (SPI CLK)
+; - JMPPIN is SPI CS (5)
+
+.define CLK 2
+
+public start:
+    ; load bits to match into y
+    out y, 32
+
+match:
+    set x, 7                ; bits to match (need to be 32)
+    mov isr, null
+
+    ; wait for falling chip select edge
+wait_cs:
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+
+    ; sample the bits to match into x
+bitloop:
+    ; wait for rising clock edge
+    wait 1 gpio CLK
+    in pins, 1 
+    jmp PIN match           ; break out of bitloop if cs is high
+    jmp x--, bitloop
+
+    ; compare read bits
+    mov x, isr              ; move bits read to x
+    jmp x!=y, match         ; continue if bits don't match
+    push
+
+    nop 
+    in pins, 1
+.wrap_target
+sampleloop:
+    nop     [1]
+    wait 1 gpio CLK
+    in pins, 1 
+.wrap
+
+;-------------------------------------------------------------------------------------------------------------------------;
+
+.program spi_slave
+.define CLK 10
+
+public start:
+    set x, 1
+loop:
+    mov osr, x
+    out null, 31
+    out pins, 1
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+
+    nop [4]
+    
+.wrap_target
+    wait 0 gpio CLK
+    out pins, 1         [1]
+    jmp PIN loop           ; break out of bitloop if cs is high
+.wrap
+
+;-------------------------------------------------------------------------------------------------------------------------;
+
+% c-sdk {
+struct rpmc_command_info {
+    enum {
+        WRITE_ROOT_KEY,
+        UPDATE_HMAC_KEY,
+        INCREMENT,
+        GET,
+    } kind;
+    unsigned int target_counter;
+    uint8_t tag[12];
+};
+
+struct pio_metadata {
+    PIO pio;
+    unsigned int sm;
+    unsigned int offset;
+    pio_sm_config cfg;
+};
+
+
+static bool rpmc_sniffer_inited = false;
+static struct pio_metadata rpmc_sniffer_inst;
+
+static bool interposer_inited = false;
+static struct pio_metadata interposer_inst;
+
+void deinit(struct pio_metadata * inst, const pio_program_t * prog)
+{
+    pio_sm_set_enabled(inst->pio, inst->sm, false);
+    pio_remove_program(inst->pio, prog, inst->offset);
+    pio_sm_unclaim(inst->pio, inst->sm);
+}
+
+
+static void rpmc_sniffer_cleanup() {
+
+    if (rpmc_sniffer_inited) {
+        deinit(&rpmc_sniffer_inst, &rpmc_sniffer_program);
+        rpmc_sniffer_inited = false;
+    }
+}
+
+static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
+
+    rpmc_sniffer_cleanup();
+
+    if (!pio_claim_free_sm_and_add_program(&rpmc_sniffer_program, &rpmc_sniffer_inst.pio, &rpmc_sniffer_inst.sm, &rpmc_sniffer_inst.offset)) {
+        printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
+        return false;
+    }
+
+    pio_gpio_init(rpmc_sniffer_inst.pio, clk);
+    gpio_set_input_hysteresis_enabled(clk, false);
+    pio_gpio_init(rpmc_sniffer_inst.pio, mosi);
+    gpio_set_input_hysteresis_enabled(mosi, false);
+    pio_gpio_init(rpmc_sniffer_inst.pio, cs);
+
+    rpmc_sniffer_inst.cfg = rpmc_sniffer_program_get_default_config(rpmc_sniffer_inst.offset);
+
+    // io mapping (inputs 0:svd)
+    sm_config_set_in_pins(&rpmc_sniffer_inst.cfg, mosi);
+    sm_config_set_in_pin_count(&rpmc_sniffer_inst.cfg, 1);
+
+    // shifts are msb-first 32-bits
+    sm_config_set_in_shift(&rpmc_sniffer_inst.cfg, false, true, 32);
+    sm_config_set_out_shift(&rpmc_sniffer_inst.cfg, false, true, 32);
+
+    // setup cs as jump pins
+    sm_config_set_jmp_pin(&rpmc_sniffer_inst.cfg, cs);
+
+    // 125 MHz
+    sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
+
+    rpmc_sniffer_inited = true;
+    // success
+    return true;
+}
+
+bool interposer_pio_init(unsigned int cs, unsigned int clk, unsigned miso)
+{
+    if (!pio_claim_free_sm_and_add_program(&spi_slave_program, &interposer_inst.pio, &interposer_inst.sm, &interposer_inst.offset)) {
+        printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
+        return false;
+    }
+    pio_gpio_init(interposer_inst.pio, clk);
+    pio_gpio_init(interposer_inst.pio, cs);
+    pio_gpio_init(interposer_inst.pio, miso);
+    // gpio_set_slew_rate(miso, GPIO_SLEW_RATE_FAST);
+    // gpio_set_drive_strength(miso, GPIO_DRIVE_STRENGTH_12MA);
+
+    interposer_inst.cfg = spi_slave_program_get_default_config(interposer_inst.offset);
+
+    // io mapping (inputs 0:svd)
+    sm_config_set_out_pins(&interposer_inst.cfg, miso, 1);
+    pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, miso, 1, true);
+
+    sm_config_set_out_shift(&interposer_inst.cfg, false, true, 8);
+
+    // setup cs as jump pins
+    sm_config_set_jmp_pin(&interposer_inst.cfg, cs);
+
+    // 125 MHz
+    sm_config_set_clkdiv(&interposer_inst.cfg, 1.0f);
+
+    int rc = pio_sm_init(interposer_inst.pio, interposer_inst.sm, interposer_inst.offset + spi_slave_offset_start, &interposer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(interposer_inst.pio, interposer_inst.sm, true);
+
+    interposer_inited = true;
+}
+
+static void parse_rpmc_command(struct rpmc_command_info * info)
+{
+    enum trigger_state {
+        INITIAL,
+        RPMC_OP_RECIEVED,
+        CAPTURING_GET,
+        CAPTURING_INCREMENT
+    };
+    enum trigger_state state = INITIAL;
+
+    while (true) {
+        uint32_t byte = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+        printf("0x%08x\n", byte);
+
+        switch (state) {
+            case INITIAL:
+                switch (byte) {
+                    case 0x00:
+                        info->kind = WRITE_ROOT_KEY;
+                        return;
+                    case 0x01:
+                        info->kind = UPDATE_HMAC_KEY;
+                        return;
+                    case 0x02:
+                        info->kind = INCREMENT;
+                        state = CAPTURING_INCREMENT;
+                        break;
+                    case 0x03:
+                        info->kind = GET;
+                        state = CAPTURING_GET;
+                        break;
+                    default:
+                        printf("Error: should not happen");
+                        return;
+                }
+                break;
+            case CAPTURING_INCREMENT:
+                info->target_counter = byte;
+                return;
+            case CAPTURING_GET:
+                info->target_counter = byte;
+
+                pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm); // dummy byte
+                
+                for (size_t i = 0; i < 12; i++){
+                    info->tag[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+                }
+
+                return;
+        }
+    }
+}
+
+static int rpmc_interpose(struct rpmc_command_info * info) {
+    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+
+    pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9b);
+
+    // wait until command is received
+    pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+
+    parse_rpmc_command(info);
+
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
+    return 0;
+}
+
+static int __time_critical_func(trigger_get)(void (*callback)(void)) {
+    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+
+    pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x96);
+
+    // wait until command is received
+    while (pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm))
+        tight_loop_contents();
+    
+    callback();
+
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
+    return 0;
+}
+
+void interposer_send(const uint8_t * data, const size_t size)
+{
+    for (size_t i = 0; i < size; i++) {
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, data[i] << 24);
+    }
+
+    while (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm))
+        tight_loop_contents();
+}
+%}
