@@ -37,6 +37,7 @@ bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
 #define HMAC_KEY_SIZE 32
 
 struct __attribute((__packed__)) rpmc_status_msg {
+    uint8_t im_too_lazy_dummy;
     uint8_t dummy[2];
     uint8_t status;
 	uint8_t tag[12];
@@ -161,8 +162,8 @@ void interpose_intel()
 
 void interpose_intel_core1()
 {
-    const static uint8_t wait_msg[] = {0xaa, 0xaa, 0xaa};
-    const static uint8_t done_msg[] = {0xff, 0xff, 0x80};
+    const static uint8_t wait_msg[] = {0xff, 0xff, 0x01};
+    const static uint8_t done_msg[] = {0xff, 0xff, 0xff, 0x80};
     union rpmc_full_status response;
     size_t response_bytes_received = 0;
 
@@ -178,7 +179,7 @@ void interpose_intel_core1()
             response_bytes_received = 0;
         }
 
-        while (response_bytes_received < count_of(response.words) && multicore_fifo_pop_timeout_us(20, &response.words[response_bytes_received]))
+        while (response_bytes_received < count_of(response.words) && multicore_fifo_pop_timeout_us(0, &response.words[response_bytes_received]))
             response_bytes_received++;
     }
 }
@@ -368,23 +369,11 @@ int main()
             multicore_launch_core1(rpmc_interpose_increment_core1);
             spi_trigger(UINT16_C(0x9b02), interpose);
             break;
-        case 'd':
-            init_mux();
-            init_lls(0, 0);
-            interpose_no_push();
-            
-            interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_TX);
-
-            const static uint8_t wait_msg[] = {0xff, 0xff, 0x01};
-            for (;;)
-                interposer_send(wait_msg, 1);
-
-            break;
         case 'i':
         i:
             init_mux();
             init_lls(0, 0);
-            rpmc_sniffer_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_MASTER_SPI_RX);
+            rpmc_sniffer_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_MASTER_SPI_RX, PIN_MUX_INTERPOSE, PIN_LLS_1DIR);
             interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_TX);
             
             printf("Interposing Intel\n");

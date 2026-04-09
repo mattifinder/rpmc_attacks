@@ -14,6 +14,7 @@
 ; - JMPPIN is SPI CS (5)
 
 .define CLK 2
+.side_set 1 opt
 
 public start:
     ; load bits to match into y
@@ -39,6 +40,7 @@ bitloop:
     ; compare read bits
     mov x, isr              ; move bits read to x
     jmp x!=y, match         ; continue if bits don't match
+    irq clear 4
     push
 
     nop 
@@ -49,6 +51,12 @@ sampleloop:
     wait 1 gpio CLK
     in pins, 1 
 .wrap
+
+public set_pins:
+    irq wait 4
+    set PINS, 1 side 1
+    jmp set_pins
+
 
 ;-------------------------------------------------------------------------------------------------------------------------;
 
@@ -96,6 +104,7 @@ struct pio_metadata {
 
 static bool rpmc_sniffer_inited = false;
 static struct pio_metadata rpmc_sniffer_inst;
+static int pin_setter_sm;
 
 static bool interposer_inited = false;
 static struct pio_metadata interposer_inst;
@@ -116,7 +125,7 @@ static void rpmc_sniffer_cleanup() {
     }
 }
 
-static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
+static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned int s1, const unsigned int s2) {
 
     rpmc_sniffer_cleanup();
 
@@ -125,11 +134,26 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
         return false;
     }
 
+    pin_setter_sm = pio_claim_unused_sm(rpmc_sniffer_inst.pio, false);
+    if (pin_setter_sm < 0) {
+        printf("Error: could not claim free sm");
+        return false;
+    }
+
+
     pio_gpio_init(rpmc_sniffer_inst.pio, clk);
     gpio_set_input_hysteresis_enabled(clk, false);
     pio_gpio_init(rpmc_sniffer_inst.pio, mosi);
     gpio_set_input_hysteresis_enabled(mosi, false);
     pio_gpio_init(rpmc_sniffer_inst.pio, cs);
+
+    pio_gpio_init(rpmc_sniffer_inst.pio, s1);
+    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, s1, 1, true);
+    pio_sm_set_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, s1, 1);
+
+    pio_gpio_init(rpmc_sniffer_inst.pio, s2);
+    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, s2, 1, true);
+    pio_sm_set_sideset_pins(rpmc_sniffer_inst.pio, pin_setter_sm, s2);
 
     rpmc_sniffer_inst.cfg = rpmc_sniffer_program_get_default_config(rpmc_sniffer_inst.offset);
 
@@ -146,6 +170,9 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
 
     // 125 MHz
     sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
+
+    sm_config_set_sideset_pin_base(&rpmc_sniffer_inst.cfg, s2);
+
 
     rpmc_sniffer_inited = true;
     // success
@@ -266,6 +293,13 @@ static int __time_critical_func(trigger_get)(void (*callback)(void)) {
         printf("Error: spi sniff sm failed to initialize!\n");
         return rc;
     }
+
+    rc = pio_sm_init(rpmc_sniffer_inst.pio, pin_setter_sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_set_pins, &rpmc_sniffer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    } 
+
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
 
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x96);
@@ -274,9 +308,10 @@ static int __time_critical_func(trigger_get)(void (*callback)(void)) {
     while (pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm))
         tight_loop_contents();
     
-    callback();
+    //callback();
 
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, false);
     return 0;
 }
 
