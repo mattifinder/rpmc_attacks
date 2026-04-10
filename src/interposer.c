@@ -39,8 +39,8 @@ bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
 struct __attribute((__packed__)) rpmc_status_msg {
     uint8_t dummy[2];
     uint8_t status;
-    uint32_t tag[3];
-    uint32_t counter_data;
+    uint8_t tag[96];
+    uint8_t counter_data[4];
     uint32_t signature[64];
 };
 
@@ -103,7 +103,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
     }
 }
 
-static uint32_t counter_values[4] = {0, 0, 0, 0};
+static uint32_t counter_values[4] = {0xC5, 0xC5, 0, 0};
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
     // Key slot 0
     0xc8, 0x63, 0x76, 0x1d, 0x3e, 0xbe, 0xc4, 0x71,
@@ -152,13 +152,43 @@ void interpose_intel()
             //printf("target counter: 0x%02x\n", info.target_counter);
             //printf("tag: 0x%08x%08x%08x%08x\n", info.tag[0], info.tag[1], info.tag[2], info.tag[3]);
 
-            response.msg.counter_data = reverse(counter_values[info.target_counter]);
+#if 0
+            response.msg.tag[0] = (info.tag[0] << 24) | (info.tag[1] >> 8);
+            response.msg.tag[1] = (info.tag[1] << 24) | (info.tag[2] >> 8);
+            response.msg.tag[2] = (info.tag[2] << 24) | (info.tag[3] >> 8);
+#endif
+
+            response.msg.tag[0] = 0x2c;
+            response.msg.tag[1] = 0x92;
+            response.msg.tag[2] = 0x23;
+            response.msg.tag[3] = 0x56;
+            response.msg.tag[4] = 0xff;
+            response.msg.tag[5] = 0x0c;
+            response.msg.tag[6] = 0xf0;
+            response.msg.tag[7] = 0x2a;
+            response.msg.tag[8] = 0xad;
+            response.msg.tag[9] = 0x0c;
+            response.msg.tag[10] = 0xf0;
+            response.msg.tag[11] = 0x2a;
+            response.msg.tag[12] = 0xad;
+            response.msg.tag[13] = 0xa0;
+            response.msg.tag[14] = 0x74;
+            response.msg.tag[15] = 0xf9;
+            response.msg.tag[16] = 0x00;
+            response.msg.counter_data[0] = 0x00;
+            response.msg.counter_data[1] = 0x00;
+            response.msg.counter_data[2] = 0x00;
+            response.msg.counter_data[3] = 0xC5;
+
+            //response.msg.counter_data = counter_values[info.target_counter];
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
                             hmac_keys + HMAC_KEY_SIZE * info.target_counter,
                             HMAC_KEY_SIZE,
-                            (const unsigned char *)response.msg.tag,
+                            response.msg.tag,
                             12 + 4,
                             (unsigned char *)response.msg.signature);
+            // with the 0x2c tag, the signature should be
+            // 0x1c763651857753...97d63db4
 
 
             // NOTE: we have to move the bytes around and can't use
@@ -170,8 +200,13 @@ void interpose_intel()
             for (size_t i = 1; i < count_of(info.tag); ++i) {
                 response_buf[i] = info.tag[i];
             }
+#if 0
             response_buf[3] |= (response.msg.counter_data >> 24);
             response_buf[4] = (response.msg.counter_data << 8);
+#else
+            response_buf[3] |= 0x00;
+            response_buf[4] = 0xC5 << 8;
+#endif
             for (size_t i = 0; i < count_of(response.msg.signature); ++i) {
                 response_buf[4 + i] |= response.msg.signature[i] >> 24;
                 response_buf[5 + i] = response.msg.signature[i] << 8;

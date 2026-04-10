@@ -263,10 +263,12 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
     // for an increment), since doing it after the switch case would be too
     // slow.
     // TODO: DMA might be better
+#if 0
     info->tag[1] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
     info->tag[2] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
     info->tag[3] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm) & 0xFFFFFF00;
     info->tag[0] = dword & 0xff;
+#endif
 
     uint8_t cmd_byte = (dword >> 24);
 
@@ -288,6 +290,11 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
             // NOTE: beware that we don't have much time between a get and its
             // status, so we can't print anything here
             info->kind = GET;
+
+            info->tag[0] = 0x0000002c;
+            info->tag[1] = 0x922356ff;
+            info->tag[2] = 0x0cf02aad;
+            info->tag[3] = 0xa074f900;
 
 #if 0
             info->tag[2] = (info->tag[1] << 24) | (info->tag[2] >> 8);
