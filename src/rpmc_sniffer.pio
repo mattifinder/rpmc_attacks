@@ -125,7 +125,7 @@ static void rpmc_sniffer_cleanup() {
     }
 }
 
-static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned int s1, const unsigned int s2) {
+static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned int mux, const unsigned int lls) {
 
     rpmc_sniffer_cleanup();
 
@@ -147,13 +147,13 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     gpio_set_input_hysteresis_enabled(mosi, false);
     pio_gpio_init(rpmc_sniffer_inst.pio, cs);
 
-    pio_gpio_init(rpmc_sniffer_inst.pio, s1);
-    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, s1, 1, true);
-    pio_sm_set_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, s1, 1);
+    pio_gpio_init(rpmc_sniffer_inst.pio, mux);
+    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, mux, 1, true);
+    pio_sm_set_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, mux, 1);
 
-    pio_gpio_init(rpmc_sniffer_inst.pio, s2);
-    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, s2, 1, true);
-    pio_sm_set_sideset_pins(rpmc_sniffer_inst.pio, pin_setter_sm, s2);
+    pio_gpio_init(rpmc_sniffer_inst.pio, lls);
+    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, lls, 1, true);
+    pio_sm_set_sideset_pins(rpmc_sniffer_inst.pio, pin_setter_sm, lls);
 
     rpmc_sniffer_inst.cfg = rpmc_sniffer_program_get_default_config(rpmc_sniffer_inst.offset);
 
@@ -171,7 +171,7 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     // 125 MHz
     sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
 
-    sm_config_set_sideset_pin_base(&rpmc_sniffer_inst.cfg, s2);
+    sm_config_set_sideset_pin_base(&rpmc_sniffer_inst.cfg, lls);
 
 
     rpmc_sniffer_inited = true;
