@@ -145,10 +145,13 @@ void interpose_intel()
         response.msg.dummy[0] = 0xff;
         response.msg.dummy[1] = 0xff;
         response.msg.status = 0x80;
-        
+
         if (info.kind == INCREMENT) {
             counter_values[info.target_counter]++;
         } else if (info.kind == GET) {
+            printf("target counter: 0x%02x\n", info.target_counter);
+            printf("tag: 0x%08x%08x%08x\n", info.tag[0], info.tag[1], info.tag[2]);
+#if 0
             response.msg.counter_data = reverse(counter_values[info.target_counter]);
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
                             hmac_keys + HMAC_KEY_SIZE * info.target_counter,
@@ -156,8 +159,14 @@ void interpose_intel()
                             response.msg.tag,
                             12 + 4,
                             response.msg.signature);
+#endif
         } else if (info.kind == UPDATE_HMAC_KEY) {
             // status short
+            // TODO: this assumes that we always need a short and then a long
+            // status. we could make this code more flexible by sending the full
+            // done_msg until it was accepted fully (via the return value), but
+            // this currently doesn't work due to too long delays. see the TODO
+            // comment above interposer_send.
             interposer_send(done_msg, 4);
             // status long
             interposer_send(done_msg, sizeof(done_msg));
