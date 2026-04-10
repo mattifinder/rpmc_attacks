@@ -33,7 +33,7 @@ wait_cs:
 bitloop:
     ; wait for rising clock edge
     wait 1 gpio CLK
-    in pins, 1 
+    in pins, 1
     jmp PIN match           ; break out of bitloop if cs is high
     jmp x--, bitloop
 
@@ -50,7 +50,7 @@ bitloop:
 sampleloop:
     nop     [1]
     wait 1 gpio CLK
-    in pins, 1 
+    in pins, 1
 .wrap
 
 public set_pins:
@@ -266,10 +266,11 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
         info->tag[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
     }
 
-    printf("0x%02x\n", dword);
+    printf("0x%08x\n", dword);
 
     //uint8_t cmd_byte = (dword >> 16) & 0xFF;
     uint8_t cmd_byte = (dword >> 24);
+    printf("0x%02x\n", cmd_byte);
 
     switch (cmd_byte) {
         case 0x00:
@@ -288,6 +289,10 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
         case 0x03:
             printf("get\n");
             info->kind = GET;
+
+            info->tag[2] = (info->tag[1] << 24) | (info->tag[2] >> 8);
+            info->tag[1] = (info->tag[0] << 24) | (info->tag[1] >> 8);
+            info->tag[0] = (dword << 24) | (info->tag[0] >> 8);
             break;
         default:
             printf("Error: unknown byte, should not happen\n");
@@ -295,7 +300,7 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
     }
     // If we're here we landed in an increment or get/request
 
-    info->target_counter = (dword >> 8) & 0xFF;
+    info->target_counter = (dword >> 16) & 0xFF;
 }
 
 static int listen_for_op1(struct rpmc_command_info * info) {
@@ -305,15 +310,14 @@ static int listen_for_op1(struct rpmc_command_info * info) {
         return rc;
     }
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
-
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9b);
 
 #if 0
-    // wait until command is received
-    while (pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm))
-        tight_loop_contents();
-#endif
+    // NOTE: We don't have to wait here until the rx FIFO contains something,
+    // since parse_rpmc_command blocks anyways
+#else
     pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+#endif
 
     parse_rpmc_command(info);
 
