@@ -171,6 +171,7 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     // 125 MHz
     sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
 
+    sm_config_set_set_pins(&rpmc_sniffer_inst.cfg, mux, 1);
     sm_config_set_sideset_pin_base(&rpmc_sniffer_inst.cfg, lls);
 
 
