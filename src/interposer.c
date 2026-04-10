@@ -128,8 +128,8 @@ const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
     0x03, 0x74, 0x03, 0x92, 0x3e, 0x2f, 0xeb, 0x28
 };
 
-const static uint32_t wait_msg[] = {0xaaaaad00};
-const static uint32_t done_msg[13] = {0xabcde000, [1 ...12] = 0xdeadbeef};
+const static uint32_t wait_msg[] = {0xffff0100};
+const static uint32_t done_msg[13] = {0xffff8000, [1 ...12] = 0xdeadbeef};
 
 void interpose_intel()
 {
