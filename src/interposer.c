@@ -128,6 +128,9 @@ const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
     0x03, 0x74, 0x03, 0x92, 0x3e, 0x2f, 0xeb, 0x28
 };
 
+const static uint32_t wait_msg[] = {0xaaaaad00};
+const static uint32_t done_msg[13] = {0xabcde000, [1 ...12] = 0xdeadbeef};
+
 void interpose_intel()
 {
     while (true) {
@@ -136,7 +139,7 @@ void interpose_intel()
         rpmc_interpose(&info);
         trigger_get(interpose_no_push);
 
-        printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
+        //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
         union rpmc_full_status response;
         response.msg.dummy[0] = 0xff;
@@ -153,6 +156,21 @@ void interpose_intel()
                             response.msg.tag,
                             12 + 4,
                             response.msg.signature);
+        } else if (info.kind == UPDATE_HMAC_KEY) {
+            // status short
+#if 0
+            if (interposer_send(done_msg, 4) != 8) {
+                printf("Error: status short failed somehow.\n");
+            }
+            if (interposer_send(done_msg, sizeof(done_msg)) != 8) {
+                printf("Error: status long failed somehow.\n");
+            }
+#endif
+            interposer_send(done_msg, 4);
+            interposer_send(done_msg, sizeof(done_msg));
+            //printf("status short and long sent!\n");
+            interposer_stop();
+            continue;
         }
 
         for (size_t i = 0; i < count_of(response.words); i++)
@@ -162,24 +180,21 @@ void interpose_intel()
 
 void interpose_intel_core1()
 {
-    const static uint8_t wait_msg[] = {0xff, 0xff, 0x01};
-    const static uint8_t done_msg[] = {0xff, 0xff, 0xff, 0x80};
     union rpmc_full_status response;
     size_t response_bytes_received = 0;
 
-
     while (true) {
-        if (response_bytes_received < count_of(response.words))
+        if (response_bytes_received < count_of(response.words)) {
             interposer_send(wait_msg, sizeof(wait_msg));
-        else {
+        } else {
             // This needs to be changed according to how the firmware reads out the counter value
             interposer_send(done_msg, sizeof(done_msg));
-            interposer_send((uint8_t *)&response.msg, sizeof(response.msg));
+            interposer_send(response.words, sizeof(response.msg));
             stop_interpose();
             response_bytes_received = 0;
         }
 
-        while (response_bytes_received < count_of(response.words) && multicore_fifo_pop_timeout_us(0, &response.words[response_bytes_received]))
+        while (response_bytes_received < count_of(response.words) && multicore_fifo_pop_timeout_us(20, &response.words[response_bytes_received]))
             response_bytes_received++;
     }
 }
@@ -377,7 +392,7 @@ int main()
             interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_TX);
             
             printf("Interposing Intel\n");
-            multicore_launch_core1(interpose_intel_core1);
+            //multicore_launch_core1(interpose_intel_core1);
             interpose_intel();
             break;
         case 'r':

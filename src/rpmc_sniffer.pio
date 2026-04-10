@@ -40,6 +40,7 @@ bitloop:
     ; compare read bits
     mov x, isr              ; move bits read to x
     jmp x!=y, match         ; continue if bits don't match
+    ; TODO: do we really need this or can we simply set/sideset the pin here?
     irq clear 4
     push
 
@@ -55,29 +56,66 @@ sampleloop:
 public set_pins:
     irq wait 4
     set PINS, 1 side 1
+    irq wait 4
+    set PINS, 0 side 0
     jmp set_pins
 
 
 ;-------------------------------------------------------------------------------------------------------------------------;
 
 .program spi_slave
+; CLK on gpio 10?
 .define CLK 10
 
+.wrap_target
 public start:
-    set x, 1
-loop:
-    mov osr, x
-    out null, 31
-    out pins, 1
+    ; here we wait for chip select to go low
+    ; while we wait miso should be high!
+    set pins, 1
+
+    ; get the bit count (one less than actual)
+    out x, 32
+
+    ; wait for cs to go low
     wait 1 JMPPIN
     wait 0 JMPPIN
 
-    nop [4]
-    
-.wrap_target
+    ; we might need this again for consistency
+    ;nop [4]
+
+loop:
+    ; break out of bitloop if cs is high
+    jmp PIN clear_osr
+
+    ; wait for falling edge of CLK
     wait 0 gpio CLK
-    out pins, 1         [1]
-    jmp PIN loop           ; break out of bitloop if cs is high
+
+    ; this was not fast enough so we replaced it with another jmp pin ...
+    ;wait 1 gpio CLK
+
+    ; break out of bitloop if cs is high
+    jmp PIN clear_osr
+
+    ; write out bit
+    out pins, 1
+
+    ; loop while there are still bits left
+    jmp x--, loop
+
+    ; if we arrived here, we were able to write all bits before CS went up
+    ; again. this means we can skip clearing the OSR
+    jmp end
+
+; clear remaining bits from OSR
+clear_osr:
+    mov y, x
+clear_osr_loop:
+    out null, 1
+    jmp y--, clear_osr_loop
+
+end:
+    ; push number of bits left
+    in x, 32
 .wrap
 
 ;-------------------------------------------------------------------------------------------------------------------------;
@@ -196,9 +234,11 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, unsigned miso)
 
     // io mapping (inputs 0:svd)
     sm_config_set_out_pins(&interposer_inst.cfg, miso, 1);
+    sm_config_set_set_pins(&interposer_inst.cfg, miso, 1);
     pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, miso, 1, true);
 
-    sm_config_set_out_shift(&interposer_inst.cfg, false, true, 8);
+    sm_config_set_in_shift(&interposer_inst.cfg, false, true, 32);
+    sm_config_set_out_shift(&interposer_inst.cfg, false, true, 32);
 
     // setup cs as jump pins
     sm_config_set_jmp_pin(&interposer_inst.cfg, cs);
@@ -227,36 +267,40 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
     enum trigger_state state = INITIAL;
 
     while (true) {
-        uint32_t byte = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
-        printf("0x%08x\n", byte);
+        uint32_t dword = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+        printf("0x%08x\n", dword);
 
         switch (state) {
             case INITIAL:
-                switch (byte) {
+                switch (dword >> 24) {
                     case 0x00:
+                        printf("write_root_key\n");
                         info->kind = WRITE_ROOT_KEY;
                         return;
                     case 0x01:
+                        printf("update_hmac_key\n");
                         info->kind = UPDATE_HMAC_KEY;
                         return;
                     case 0x02:
+                        printf("increment\n");
                         info->kind = INCREMENT;
                         state = CAPTURING_INCREMENT;
                         break;
                     case 0x03:
+                        printf("get\n");
                         info->kind = GET;
                         state = CAPTURING_GET;
                         break;
                     default:
-                        printf("Error: should not happen");
+                        printf("Error: should not happen\n");
                         return;
                 }
                 break;
             case CAPTURING_INCREMENT:
-                info->target_counter = byte;
+                info->target_counter = dword;
                 return;
             case CAPTURING_GET:
-                info->target_counter = byte;
+                info->target_counter = dword;
 
                 pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm); // dummy byte
                 
@@ -317,13 +361,27 @@ static int __time_critical_func(trigger_get)(void (*callback)(void)) {
     return 0;
 }
 
-void interposer_send(const uint8_t * data, const size_t size)
+uint32_t interposer_send(const uint32_t * data, const uint32_t bytecount)
 {
-    for (size_t i = 0; i < size; i++) {
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, data[i] << 24);
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, bytecount * 8 - 1);
+
+    for (size_t i = 0; i < (bytecount + 3) / 4; i++) {
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, data[i]);
     }
 
-    while (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm))
-        tight_loop_contents();
+#if 0
+    printf("after push\n");
+    printf("tx empty: %d\n", pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
+    printf("rx empty: %d\n", pio_sm_is_rx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
+#endif
+
+    uint32_t remaining;
+    remaining = pio_sm_get_blocking(interposer_inst.pio, interposer_inst.sm);
+
+    if (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm)) {
+        printf("Error: State machine FIFO should be empty\n");
+    }
+
+    return remaining + 1;
 }
 %}
