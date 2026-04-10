@@ -37,12 +37,11 @@ bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
 #define HMAC_KEY_SIZE 32
 
 struct __attribute((__packed__)) rpmc_status_msg {
-    uint8_t im_too_lazy_dummy;
     uint8_t dummy[2];
     uint8_t status;
-	uint8_t tag[12];
-	uint32_t counter_data;
-	uint8_t signature[32];
+    uint32_t tag[3];
+    uint32_t counter_data;
+    uint32_t signature[64];
 };
 
 union rpmc_full_status {
@@ -151,18 +150,40 @@ void interpose_intel()
         } else if (info.kind == GET) {
             interposer_send(wait_msg, 4);
             //printf("target counter: 0x%02x\n", info.target_counter);
-            printf("tag: 0x%08x%08x%08x\n", info.tag[0], info.tag[1], info.tag[2]);
-            interposer_stop();
-            continue;
-#if 0
+            //printf("tag: 0x%08x%08x%08x%08x\n", info.tag[0], info.tag[1], info.tag[2], info.tag[3]);
+
             response.msg.counter_data = reverse(counter_values[info.target_counter]);
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
                             hmac_keys + HMAC_KEY_SIZE * info.target_counter,
                             HMAC_KEY_SIZE,
-                            response.msg.tag,
+                            (const unsigned char *)response.msg.tag,
                             12 + 4,
-                            response.msg.signature);
-#endif
+                            (unsigned char *)response.msg.signature);
+
+
+            // NOTE: we have to move the bytes around and can't use
+            // response.words because the pi's endianness will shuffle the bytes
+            uint32_t response_buf[69];
+            // TODO: use dummy and status from the struct
+            response_buf[0] = 0xFFFF8000;
+            response_buf[0] |= info.tag[0];
+            for (size_t i = 1; i < count_of(info.tag); ++i) {
+                response_buf[i] = info.tag[i];
+            }
+            response_buf[3] |= (response.msg.counter_data >> 24);
+            response_buf[4] = (response.msg.counter_data << 8);
+            for (size_t i = 0; i < count_of(response.msg.signature); ++i) {
+                response_buf[4 + i] |= response.msg.signature[i] >> 24;
+                response_buf[5 + i] = response.msg.signature[i] << 8;
+            }
+
+            //printf("response: %08x %08x %08x %08x\n", response_buf[0], response_buf[1], response_buf[2], response_buf[3]);
+
+            interposer_send(done_msg, 4);
+            interposer_send(response_buf, sizeof(response_buf));
+
+            interposer_stop();
+
         } else if (info.kind == UPDATE_HMAC_KEY) {
             // status short
             // TODO: this assumes that we always need a short and then a long
@@ -174,32 +195,7 @@ void interpose_intel()
             // status long
             interposer_send(done_msg, sizeof(done_msg));
             interposer_stop();
-            continue;
         }
-
-        for (size_t i = 0; i < count_of(response.words); i++)
-            multicore_fifo_push_blocking(response.words[i]);
-    }
-}
-
-void interpose_intel_core1()
-{
-    union rpmc_full_status response;
-    size_t response_bytes_received = 0;
-
-    while (true) {
-        if (response_bytes_received < count_of(response.words)) {
-            interposer_send(wait_msg, sizeof(wait_msg));
-        } else {
-            // This needs to be changed according to how the firmware reads out the counter value
-            interposer_send(done_msg, sizeof(done_msg));
-            interposer_send(response.words, sizeof(response.msg));
-            stop_interpose();
-            response_bytes_received = 0;
-        }
-
-        while (response_bytes_received < count_of(response.words) && multicore_fifo_pop_timeout_us(20, &response.words[response_bytes_received]))
-            response_bytes_received++;
     }
 }
 

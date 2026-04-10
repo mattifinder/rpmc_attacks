@@ -127,7 +127,7 @@ struct rpmc_command_info {
         GET,
     } kind;
     uint8_t target_counter;
-    uint32_t tag[3];
+    uint32_t tag[4];
 };
 
 struct pio_metadata {
@@ -263,9 +263,10 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
     // for an increment), since doing it after the switch case would be too
     // slow.
     // TODO: DMA might be better
-    for (size_t i = 0; i < 96/32; i++){
-        info->tag[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
-    }
+    info->tag[1] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+    info->tag[2] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+    info->tag[3] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm) & 0xFFFFFF00;
+    info->tag[0] = dword & 0xff;
 
     uint8_t cmd_byte = (dword >> 24);
 
@@ -288,9 +289,11 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
             // status, so we can't print anything here
             info->kind = GET;
 
+#if 0
             info->tag[2] = (info->tag[1] << 24) | (info->tag[2] >> 8);
             info->tag[1] = (info->tag[0] << 24) | (info->tag[1] >> 8);
             info->tag[0] = (dword << 24) | (info->tag[0] >> 8);
+#endif
             break;
         default:
             printf("Error: unknown byte, should not happen\n");
@@ -326,6 +329,7 @@ static int listen_for_op1(struct rpmc_command_info * info) {
 }
 
 static int __time_critical_func(listen_for_op2_and_mux)() {
+    // TODO: init could be done only once
     int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
