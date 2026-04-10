@@ -299,9 +299,10 @@ static int __time_critical_func(trigger_get)(void (*callback)(void)) {
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
         return rc;
-    } 
+    }
 
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, true);
 
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x96);
 
