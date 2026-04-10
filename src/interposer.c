@@ -136,8 +136,8 @@ void interpose_intel()
     while (true) {
         struct rpmc_command_info info;
 
-        rpmc_interpose(&info);
-        trigger_get(interpose_no_push);
+        listen_for_op1(&info);
+        listen_for_op2_and_mux();
 
         //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
@@ -158,17 +158,9 @@ void interpose_intel()
                             response.msg.signature);
         } else if (info.kind == UPDATE_HMAC_KEY) {
             // status short
-#if 0
-            if (interposer_send(done_msg, 4) != 8) {
-                printf("Error: status short failed somehow.\n");
-            }
-            if (interposer_send(done_msg, sizeof(done_msg)) != 8) {
-                printf("Error: status long failed somehow.\n");
-            }
-#endif
             interposer_send(done_msg, 4);
+            // status long
             interposer_send(done_msg, sizeof(done_msg));
-            //printf("status short and long sent!\n");
             interposer_stop();
             continue;
         }

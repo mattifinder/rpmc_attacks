@@ -40,7 +40,7 @@ bitloop:
     ; compare read bits
     mov x, isr              ; move bits read to x
     jmp x!=y, match         ; continue if bits don't match
-    ; TODO: do we really need this or can we simply set/sideset the pin here?
+    ; notify the other state machine to enable the mux pin (if it is running)
     irq clear 4
     push
 
@@ -56,8 +56,6 @@ sampleloop:
 public set_pins:
     irq wait 4
     set PINS, 1 side 1
-    irq wait 4
-    set PINS, 0 side 0
     jmp set_pins
 
 
@@ -313,7 +311,7 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
     }
 }
 
-static int rpmc_interpose(struct rpmc_command_info * info) {
+static int listen_for_op1(struct rpmc_command_info * info) {
     int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
@@ -332,7 +330,7 @@ static int rpmc_interpose(struct rpmc_command_info * info) {
     return 0;
 }
 
-static int __time_critical_func(trigger_get)(void (*callback)(void)) {
+static int __time_critical_func(listen_for_op2_and_mux)() {
     int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
@@ -345,17 +343,19 @@ static int __time_critical_func(trigger_get)(void (*callback)(void)) {
         return rc;
     }
 
+    // enable the two state machines. the first looks for the match byte and
+    // sends an irq to the second which then enables the mux pin
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, true);
 
+    // set match byte to op2
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x96);
 
     // wait until command is received
     while (pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm))
         tight_loop_contents();
-    
-    //callback();
 
+    // disable the state machines again
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, false);
     return 0;
@@ -384,4 +384,10 @@ uint32_t interposer_send(const uint32_t * data, const uint32_t bytecount)
 
     return remaining + 1;
 }
+
+void interposer_stop()
+{
+    pio_sm_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, 0);
+}
+
 %}
