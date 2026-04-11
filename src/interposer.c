@@ -39,9 +39,9 @@ bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
 struct __attribute((__packed__)) rpmc_status_msg {
     uint8_t dummy[2];
     uint8_t status;
-    uint8_t tag[96];
+    uint8_t tag[12];
     uint8_t counter_data[4];
-    uint32_t signature[64];
+    uint32_t signature[8];
 };
 
 union rpmc_full_status {
@@ -140,17 +140,10 @@ void interpose_intel()
 
         //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
-        union rpmc_full_status response;
-        response.msg.dummy[0] = 0xff;
-        response.msg.dummy[1] = 0xff;
-        response.msg.status = 0x80;
-
         if (info.kind == INCREMENT) {
             counter_values[info.target_counter]++;
         } else if (info.kind == GET) {
             interposer_send(wait_msg, 4);
-            //printf("target counter: 0x%02x\n", info.target_counter);
-            //printf("tag: 0x%08x%08x%08x%08x\n", info.tag[0], info.tag[1], info.tag[2], info.tag[3]);
 
 #if 0
             response.msg.tag[0] = (info.tag[0] << 24) | (info.tag[1] >> 8);
@@ -158,35 +151,35 @@ void interpose_intel()
             response.msg.tag[2] = (info.tag[2] << 24) | (info.tag[3] >> 8);
 #endif
 
-            response.msg.tag[0] = 0x2c;
-            response.msg.tag[1] = 0x92;
-            response.msg.tag[2] = 0x23;
-            response.msg.tag[3] = 0x56;
-            response.msg.tag[4] = 0xff;
-            response.msg.tag[5] = 0x0c;
-            response.msg.tag[6] = 0xf0;
-            response.msg.tag[7] = 0x2a;
-            response.msg.tag[8] = 0xad;
-            response.msg.tag[9] = 0x0c;
-            response.msg.tag[10] = 0xf0;
-            response.msg.tag[11] = 0x2a;
-            response.msg.tag[12] = 0xad;
-            response.msg.tag[13] = 0xa0;
-            response.msg.tag[14] = 0x74;
-            response.msg.tag[15] = 0xf9;
-            response.msg.tag[16] = 0x00;
-            response.msg.counter_data[0] = 0x00;
-            response.msg.counter_data[1] = 0x00;
-            response.msg.counter_data[2] = 0x00;
-            response.msg.counter_data[3] = 0xC5;
+            uint8_t msg_buf[16];
+            // tag
+            msg_buf[0] = 0x2c;
+            msg_buf[1] = 0x92;
+            msg_buf[2] = 0x23;
+            msg_buf[3] = 0x56;
+            msg_buf[4] = 0xff;
+            msg_buf[5] = 0x0c;
+            msg_buf[6] = 0xf0;
+            msg_buf[7] = 0x2a;
+            msg_buf[8] = 0xad;
+            msg_buf[9] = 0xa0;
+            msg_buf[10] = 0x74;
+            msg_buf[11] = 0xf9;
+            // counter value
+            msg_buf[12] = 0x00;
+            msg_buf[13] = 0x00;
+            msg_buf[14] = 0x00;
+            msg_buf[15] = 0xC5;
+
+            uint32_t signature[8];
 
             //response.msg.counter_data = counter_values[info.target_counter];
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
                             hmac_keys + HMAC_KEY_SIZE * info.target_counter,
                             HMAC_KEY_SIZE,
-                            response.msg.tag,
-                            12 + 4,
-                            (unsigned char *)response.msg.signature);
+                            msg_buf,
+                            sizeof(msg_buf),
+                            (unsigned char *)signature);
             // with the 0x2c tag, the signature should be
             // 0x1c763651857753...97d63db4
 
@@ -196,7 +189,7 @@ void interpose_intel()
             uint32_t response_buf[69];
             // TODO: use dummy and status from the struct
             response_buf[0] = 0xFFFF8000;
-            response_buf[0] |= info.tag[0];
+            response_buf[0] |= (info.tag[0] & 0xFF);
             for (size_t i = 1; i < count_of(info.tag); ++i) {
                 response_buf[i] = info.tag[i];
             }
@@ -204,12 +197,12 @@ void interpose_intel()
             response_buf[3] |= (response.msg.counter_data >> 24);
             response_buf[4] = (response.msg.counter_data << 8);
 #else
-            response_buf[3] |= 0x00;
             response_buf[4] = 0xC5 << 8;
 #endif
-            for (size_t i = 0; i < count_of(response.msg.signature); ++i) {
-                response_buf[4 + i] |= response.msg.signature[i] >> 24;
-                response_buf[5 + i] = response.msg.signature[i] << 8;
+
+            for (size_t i = 0; i < count_of(signature); ++i) {
+                response_buf[4 + i] |= signature[i] >> 24;
+                response_buf[5 + i] = signature[i] << 8;
             }
 
             //printf("response: %08x %08x %08x %08x\n", response_buf[0], response_buf[1], response_buf[2], response_buf[3]);
