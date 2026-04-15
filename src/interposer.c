@@ -146,11 +146,25 @@ void interpose_intel()
         } else if (info.kind == GET) {
             interposer_send(wait_msg, 4);
 
-#if 0
-            response.msg.tag[0] = (info.tag[0] << 24) | (info.tag[1] >> 8);
-            response.msg.tag[1] = (info.tag[1] << 24) | (info.tag[2] >> 8);
-            response.msg.tag[2] = (info.tag[2] << 24) | (info.tag[3] >> 8);
-#endif
+#if 1
+            uint8_t msg_buf[16];
+            msg_buf[0] = info.tag[0] & 0xFF;
+            for (size_t i = 1; i < count_of(info.tag); ++i) {
+                msg_buf[(i - 1) * 4 + 1] = info.tag[i] >> 24 & 0xFF;
+                msg_buf[(i - 1) * 4 + 2] = info.tag[i] >> 16 & 0xFF;
+                msg_buf[(i - 1) * 4 + 3] = info.tag[i] >>  8 & 0xFF;
+                msg_buf[(i - 1) * 4 + 4] = info.tag[i] >>  0 & 0xFF;
+            }
+
+            msg_buf[12] = counter_values[info.target_counter] >> 24 & 0xFF;
+            msg_buf[13] = counter_values[info.target_counter] >> 16 & 0xFF;
+            msg_buf[14] = counter_values[info.target_counter] >>  8 & 0xFF;
+            msg_buf[15] = counter_values[info.target_counter] >>  0 & 0xFF;
+
+            //response.msg.tag[0] = (info.tag[0] << 24) | (info.tag[1] >> 8);
+            //response.msg.tag[1] = (info.tag[1] << 24) | (info.tag[2] >> 8);
+            //response.msg.tag[2] = (info.tag[2] << 24) | (info.tag[3] >> 8);
+#else
 
             uint8_t msg_buf[16];
             // tag
@@ -171,8 +185,9 @@ void interpose_intel()
             msg_buf[13] = 0x00;
             msg_buf[14] = 0x00;
             msg_buf[15] = 0xC5;
+#endif
 
-            uint32_t signature[8];
+            uint8_t signature[33];
 
             //response.msg.counter_data = counter_values[info.target_counter];
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
@@ -180,14 +195,14 @@ void interpose_intel()
                             HMAC_KEY_SIZE,
                             msg_buf,
                             sizeof(msg_buf),
-                            (unsigned char *)signature);
+                            signature);
             // with the 0x2c tag, the signature should be
             // 0x1c763651857753...97d63db4
 
 
             // NOTE: we have to move the bytes around and can't use
             // response.words because the pi's endianness will shuffle the bytes
-            uint32_t response_buf[69];
+            uint32_t response_buf[13];
             // TODO: use dummy and status from the struct
             response_buf[0] = 0xFFFF8000;
             response_buf[0] |= (info.tag[0] & 0xFF);
@@ -200,11 +215,22 @@ void interpose_intel()
 #else
             response_buf[4] = 0xC5 << 8;
 #endif
+            response_buf[4] |= signature[0];
 
+#if 0
             for (size_t i = 0; i < count_of(signature); ++i) {
                 response_buf[4 + i] |= signature[i] >> 24;
                 response_buf[5 + i] = signature[i] << 8;
             }
+#else
+            for (size_t i = 0; i < count_of(response_buf) - 5; ++i) {
+                uint32_t sig_word = signature[i * 4 + 1] << 24;
+                sig_word |= signature[i * 4 + 2] << 16;
+                sig_word |= signature[i * 4 + 3] << 8;
+                sig_word |= signature[i * 4 + 4];
+                response_buf[5 + i] = sig_word;
+            }
+#endif
 
             //printf("response: %08x %08x %08x %08x\n", response_buf[0], response_buf[1], response_buf[2], response_buf[3]);
 
@@ -212,6 +238,7 @@ void interpose_intel()
             interposer_send(response_buf, sizeof(response_buf));
 
             interposer_stop();
+            //printf("get\n");
 
         } else if (info.kind == UPDATE_HMAC_KEY) {
             // status short
