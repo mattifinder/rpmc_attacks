@@ -18,6 +18,8 @@
 
 public start:
     ; load bits to match into y
+    ; TODO: do we actually need the pull?
+    pull block
     out y, 32
 
 match:
@@ -40,16 +42,26 @@ bitloop:
     ; compare read bits
     mov x, isr              ; move bits read to x
     jmp x!=y, match         ; continue if bits don't match
+
+    ; if we are here that means that the SPI command matches
+
     ; notify the other state machine to enable the mux pin (if it is running)
     irq clear 4
     push
 
-    nop 
+    nop
     in pins, 1
 .wrap_target
 sampleloop:
-    nop     [1]
+    ; break out of bitloop if cs is high (i.e. end of transaction) and reset to
+    ; the beginning to receive a new match byte
+    jmp !OSRE start [1]
+
+    ; wait for rising clock edge
     wait 1 gpio CLK
+
+    ; read bit
+    ; TODO: does this block when the RX fifo is full due to autopush?
     in pins, 1
 .wrap
 
@@ -251,6 +263,13 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, unsigned miso)
     }
     pio_sm_set_enabled(interposer_inst.pio, interposer_inst.sm, true);
 
+    rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+
     interposer_inited = true;
 }
 
@@ -306,12 +325,10 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
 }
 
 static int listen_for_op1(struct rpmc_command_info * info) {
-    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
-    if (rc < 0) {
-        printf("Error: spi sniff sm failed to initialize!\n");
-        return rc;
-    }
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+    // Clear the RX fifo in case it stalled
+    // TODO: drain is probably not needed, clear is enough
+    pio_sm_drain_tx_fifo(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+    pio_sm_clear_fifos(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
     // tell the sample loop to look for the OP1 byte
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9b);
@@ -325,18 +342,11 @@ static int listen_for_op1(struct rpmc_command_info * info) {
 
     parse_rpmc_command(info);
 
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
     return 0;
 }
 
 static int __time_critical_func(listen_for_op2_and_mux)() {
-    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
-    if (rc < 0) {
-        printf("Error: spi sniff sm failed to initialize!\n");
-        return rc;
-    }
-
-    rc = pio_sm_init(rpmc_sniffer_inst.pio, pin_setter_sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_set_pins, &rpmc_sniffer_inst.cfg);
+    int rc = pio_sm_init(rpmc_sniffer_inst.pio, pin_setter_sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_set_pins, &rpmc_sniffer_inst.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
         return rc;
@@ -345,8 +355,12 @@ static int __time_critical_func(listen_for_op2_and_mux)() {
     // TODO: rewrite comment
     // enable the two state machines. the first looks for the match byte and
     // sends an irq to the second which then enables the mux pin
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, true);
+
+    // Clear the RX fifo in case it stalled
+    // TODO: drain is probably not needed, clear is enough
+    pio_sm_drain_tx_fifo(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+    pio_sm_clear_fifos(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
     // set match byte to op2
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x96);
@@ -356,7 +370,6 @@ static int __time_critical_func(listen_for_op2_and_mux)() {
         tight_loop_contents();
 
     // disable the state machines again
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, false);
     return 0;
 }
