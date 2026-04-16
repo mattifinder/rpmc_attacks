@@ -103,7 +103,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
     }
 }
 
-static uint32_t counter_values[4] = {0xC5, 0xC5, 0, 0};
+static uint32_t counter_values[4] = {0xBD, 0xBD, 0, 0};
 // Keys for key_data 01000000
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
     // Key slot 0
@@ -202,6 +202,7 @@ void interpose_intel()
 
             // NOTE: we have to move the bytes around and can't use
             // response.words because the pi's endianness will shuffle the bytes
+            // TODO: can we switch to a left-shift into the fifo?
             uint32_t response_buf[13];
             // TODO: use dummy and status from the struct
             response_buf[0] = 0xFFFF8000;
@@ -209,9 +210,9 @@ void interpose_intel()
             for (size_t i = 1; i < count_of(info.tag); ++i) {
                 response_buf[i] = info.tag[i];
             }
-#if 0
-            response_buf[3] |= (response.msg.counter_data >> 24);
-            response_buf[4] = (response.msg.counter_data << 8);
+#if 1
+            response_buf[3] |= (counter_values[info.target_counter] >> 24);
+            response_buf[4] = (counter_values[info.target_counter] << 8);
 #else
             response_buf[4] = 0xC5 << 8;
 #endif
