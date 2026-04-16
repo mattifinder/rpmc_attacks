@@ -115,9 +115,11 @@ const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
     0x03, 0x74, 0x03, 0x92, 0x3e, 0x2f, 0xeb, 0x28
 };
 
-// NOTE: the buffers' sizes must be 4-byte aligned
 const static uint8_t wait_msg[4] = {0xff, 0xff, WAIT};
 const static uint8_t done_msg[52] = {0xff, 0xff, DONE};
+// the buffers' sizes must be 4-byte aligned
+static_assert(sizeof(wait_msg) % 4 == 0);
+static_assert(sizeof(done_msg) % 4 == 0);
 
 void interpose_intel()
 {
@@ -132,28 +134,45 @@ void interpose_intel()
         //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
         if (info.kind == INCREMENT) {
-            counter_values[info.counter]++;
+            // TODO
+            //counter_values[info.counter]++;
         } else if (info.kind == GET) {
 
             interposer_send(wait_msg, 4);
 
-            const uint8_t *key = hmac_keys + HMAC_KEY_SIZE * info.counter;
-            info.counter = reverse(counter_values[info.counter]);
+            // we overwrite the counter address with its value, so we need to
+            // calculate this before
+            const uint8_t *key = hmac_keys + HMAC_KEY_SIZE * info.get.counter;
+            info.get.counter = reverse(counter_values[info.get.counter]);
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
                             key,
                             HMAC_KEY_SIZE,
-                            info.tag,
-                            info.signature - info.tag,
-                            info.signature);
+                            info.get.tag,
+                            info.get.signature - info.get.tag,
+                            info.get.signature);
             info.status = DONE;
 
-            static_assert(sizeof(info) == 52);
+            // send a short done first
             interposer_send(done_msg, 4);
-            interposer_send((const uint8_t *)&info, (sizeof(info) + 3) / 4 * 4);
+
+            size_t size = info.get.end - (uint8_t *)&info;
+            static_assert(!(offsetof(struct rpmc_command_info, get.end) % 4));
+            interposer_send((const uint8_t *)&info, size);
 
             interposer_stop();
 
         } else if (info.kind == UPDATE_HMAC_KEY) {
+            interposer_send(wait_msg, 4);
+
+            mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                            hmac_keys + HMAC_KEY_SIZE * info.update.counter,
+                            HMAC_KEY_SIZE,
+                            info.update.key_data,
+                            info.update.signature - info.update.key_data,
+                            info.update.signature);
+            info.status = DONE;
+
+
             // status short
             // TODO: this assumes that we always need a short and then a long
             // status. we could make this code more flexible by sending the full
@@ -161,8 +180,15 @@ void interpose_intel()
             // this currently doesn't work due to too long delays. see the TODO
             // comment above interposer_send.
             interposer_send(done_msg, 4);
-            // status long
+
+#if 0
+            size_t size = offsetof(struct rpmc_command_info, update.end);
+            static_assert(!(offsetof(struct rpmc_command_info, update.end) % 4));
+            interposer_send((const uint8_t *)&info, size);
+#else
             interposer_send(done_msg, sizeof(done_msg));
+#endif
+
             interposer_stop();
         }
     }
