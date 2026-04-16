@@ -36,19 +36,6 @@ bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
 
 #define HMAC_KEY_SIZE 32
 
-struct __attribute((__packed__)) rpmc_status_msg {
-    uint8_t dummy[2];
-    uint8_t status;
-    uint8_t tag[12];
-    uint8_t counter_data[4];
-    uint32_t signature[8];
-};
-
-union rpmc_full_status {
-    struct rpmc_status_msg msg;
-    uint32_t words[(sizeof(struct rpmc_status_msg) + 3) / 4]; // for easier transfer via fifo
-};
-
 void error(const char * msg)
 {
     while (true) {
@@ -128,118 +115,43 @@ const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
     0x03, 0x74, 0x03, 0x92, 0x3e, 0x2f, 0xeb, 0x28
 };
 
-const static uint32_t wait_msg[] = {0xffff0100};
-const static uint32_t done_msg[13] = {0xffff80de, [1 ...12] = 0xadbeefde};
+// NOTE: the buffers' sizes must be 4-byte aligned
+const static uint8_t wait_msg[4] = {0xff, 0xff, WAIT};
+const static uint8_t done_msg[52] = {0xff, 0xff, DONE};
 
 void interpose_intel()
 {
-    while (true) {
-        struct rpmc_command_info info;
+    struct rpmc_command_info info;
+    info.dummy[0] = done_msg[0];
+    info.dummy[1] = done_msg[1];
 
+    while (true) {
         listen_for_op1(&info);
         listen_for_op2_and_mux();
 
         //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
         if (info.kind == INCREMENT) {
-            counter_values[info.target_counter]++;
+            counter_values[info.counter]++;
         } else if (info.kind == GET) {
+
             interposer_send(wait_msg, 4);
 
-#if 1
-            uint8_t msg_buf[16];
-            msg_buf[0] = info.tag[0] & 0xFF;
-            for (size_t i = 1; i < count_of(info.tag); ++i) {
-                msg_buf[(i - 1) * 4 + 1] = info.tag[i] >> 24 & 0xFF;
-                msg_buf[(i - 1) * 4 + 2] = info.tag[i] >> 16 & 0xFF;
-                msg_buf[(i - 1) * 4 + 3] = info.tag[i] >>  8 & 0xFF;
-                msg_buf[(i - 1) * 4 + 4] = info.tag[i] >>  0 & 0xFF;
-            }
-
-            msg_buf[12] = counter_values[info.target_counter] >> 24 & 0xFF;
-            msg_buf[13] = counter_values[info.target_counter] >> 16 & 0xFF;
-            msg_buf[14] = counter_values[info.target_counter] >>  8 & 0xFF;
-            msg_buf[15] = counter_values[info.target_counter] >>  0 & 0xFF;
-
-            //response.msg.tag[0] = (info.tag[0] << 24) | (info.tag[1] >> 8);
-            //response.msg.tag[1] = (info.tag[1] << 24) | (info.tag[2] >> 8);
-            //response.msg.tag[2] = (info.tag[2] << 24) | (info.tag[3] >> 8);
-#else
-
-            uint8_t msg_buf[16];
-            // tag
-            msg_buf[0] = 0x2c;
-            msg_buf[1] = 0x92;
-            msg_buf[2] = 0x23;
-            msg_buf[3] = 0x56;
-            msg_buf[4] = 0xff;
-            msg_buf[5] = 0x0c;
-            msg_buf[6] = 0xf0;
-            msg_buf[7] = 0x2a;
-            msg_buf[8] = 0xad;
-            msg_buf[9] = 0xa0;
-            msg_buf[10] = 0x74;
-            msg_buf[11] = 0xf9;
-            // counter value
-            msg_buf[12] = 0x00;
-            msg_buf[13] = 0x00;
-            msg_buf[14] = 0x00;
-            msg_buf[15] = 0xC5;
-#endif
-
-            uint8_t signature[33];
-
-            //response.msg.counter_data = counter_values[info.target_counter];
+            const uint8_t *key = hmac_keys + HMAC_KEY_SIZE * info.counter;
+            info.counter = reverse(counter_values[info.counter]);
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                            hmac_keys + HMAC_KEY_SIZE * info.target_counter,
+                            key,
                             HMAC_KEY_SIZE,
-                            msg_buf,
-                            sizeof(msg_buf),
-                            signature);
-            // with the 0x2c tag, the signature should be
-            // 0x1c763651857753...97d63db4
+                            info.tag,
+                            info.signature - info.tag,
+                            info.signature);
+            info.status = DONE;
 
-
-            // NOTE: we have to move the bytes around and can't use
-            // response.words because the pi's endianness will shuffle the bytes
-            // TODO: can we switch to a left-shift into the fifo?
-            uint32_t response_buf[13];
-            // TODO: use dummy and status from the struct
-            response_buf[0] = 0xFFFF8000;
-            response_buf[0] |= (info.tag[0] & 0xFF);
-            for (size_t i = 1; i < count_of(info.tag); ++i) {
-                response_buf[i] = info.tag[i];
-            }
-#if 1
-            response_buf[3] |= (counter_values[info.target_counter] >> 24);
-            response_buf[4] = (counter_values[info.target_counter] << 8);
-#else
-            response_buf[4] = 0xC5 << 8;
-#endif
-            response_buf[4] |= signature[0];
-
-#if 0
-            for (size_t i = 0; i < count_of(signature); ++i) {
-                response_buf[4 + i] |= signature[i] >> 24;
-                response_buf[5 + i] = signature[i] << 8;
-            }
-#else
-            for (size_t i = 0; i < count_of(response_buf) - 5; ++i) {
-                uint32_t sig_word = signature[i * 4 + 1] << 24;
-                sig_word |= signature[i * 4 + 2] << 16;
-                sig_word |= signature[i * 4 + 3] << 8;
-                sig_word |= signature[i * 4 + 4];
-                response_buf[5 + i] = sig_word;
-            }
-#endif
-
-            //printf("response: %08x %08x %08x %08x\n", response_buf[0], response_buf[1], response_buf[2], response_buf[3]);
-
+            static_assert(sizeof(info) == 52);
             interposer_send(done_msg, 4);
-            interposer_send(response_buf, sizeof(response_buf));
+            interposer_send((const uint8_t *)&info, (sizeof(info) + 3) / 4 * 4);
 
             interposer_stop();
-            //printf("get\n");
 
         } else if (info.kind == UPDATE_HMAC_KEY) {
             // status short
