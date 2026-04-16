@@ -149,8 +149,8 @@ void interpose_intel()
         if (info.kind == INCREMENT) {
             counter_values[info.target_counter]++;
         } else if (info.kind == GET) {
-            printf("target counter: 0x%02x\n", info.target_counter);
-            printf("tag: 0x%08x%08x%08x\n", info.tag[0], info.tag[1], info.tag[2]);
+            //printf("target counter: 0x%02x\n", info.target_counter);
+            //printf("tag: 0x%08x%08x%08x\n", info.tag[0], info.tag[1], info.tag[2]);
 #if 0
             response.msg.counter_data = reverse(counter_values[info.target_counter]);
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),

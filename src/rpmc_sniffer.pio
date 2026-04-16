@@ -256,6 +256,7 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, unsigned miso)
 
 static void parse_rpmc_command(struct rpmc_command_info * info)
 {
+    uint32_t op1 = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
     uint32_t dword = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
     // get the 96 bits of tag in case we need them for a get (or might recycle
@@ -266,6 +267,7 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
         info->tag[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
     }
 
+    printf("0x%08x\n", op1);
     printf("0x%08x\n", dword);
 
     //uint8_t cmd_byte = (dword >> 16) & 0xFF;
@@ -287,7 +289,7 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
             // TODO: here we have to get counter_data
             break;
         case 0x03:
-            printf("get\n");
+            //printf("get\n");
             info->kind = GET;
 
             info->tag[2] = (info->tag[1] << 24) | (info->tag[2] >> 8);
@@ -310,13 +312,15 @@ static int listen_for_op1(struct rpmc_command_info * info) {
         return rc;
     }
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+
+    // tell the sample loop to look for the OP1 byte
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9b);
 
 #if 0
     // NOTE: We don't have to wait here until the rx FIFO contains something,
     // since parse_rpmc_command blocks anyways
 #else
-    pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+    //pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 #endif
 
     parse_rpmc_command(info);
@@ -338,6 +342,7 @@ static int __time_critical_func(listen_for_op2_and_mux)() {
         return rc;
     }
 
+    // TODO: rewrite comment
     // enable the two state machines. the first looks for the match byte and
     // sends an irq to the second which then enables the mux pin
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
@@ -349,8 +354,6 @@ static int __time_critical_func(listen_for_op2_and_mux)() {
     // wait until command is received
     while (pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm))
         tight_loop_contents();
-
-    printf("got command\n");
 
     // disable the state machines again
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
