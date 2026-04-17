@@ -115,17 +115,78 @@ const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
     0x03, 0x74, 0x03, 0x92, 0x3e, 0x2f, 0xeb, 0x28
 };
 
-const static uint8_t wait_msg[4] = {0xff, 0xff, WAIT};
+const static uint32_t wait_msg[] = {0xffff0100};
+#if 0
 const static uint8_t done_msg[52] = {0xff, 0xff, DONE};
+#else
+//const static uint32_t done_msg[] = {0xffff80de, [1 ... 12] = 0xadbeefde};
+#endif
+
+#if 0
+const static uint8_t done_update_msg[] = {
+	// counter 0
+	0xFF, 0xFF, DONE, 0x01, 0x00, 0x00, 0x00, 0x9D, 0xC5, 0xE8, 0xD2, 0x4C,
+	0xE7, 0x51, 0x6F, 0x88, 0xA6, 0x68, 0xFD, 0xEC, 0x94, 0x8F, 0x35, 0xF3,
+	0xC3, 0xD1, 0x85, 0xF9, 0xCA, 0xCB, 0x50, 0xB4, 0xFF, 0x82, 0xFA, 0x36,
+	0xDA, 0xBD, 0x69, 0x21, 0xAA, 0x52, 0xA1, 0x22, 0x84, 0x01, 0x48, 0x04,
+	0x46, 0xBA, 0x12, 0xFF,
+	// counter 1
+	0xFF, 0xFF, DONE, 0x01, 0x00, 0x00, 0x00, 0xC3, 0xC0, 0x92, 0x52, 0xE2,
+	0x14, 0x53, 0x43, 0x07, 0xA2, 0x55, 0x5F, 0x0C, 0x86, 0x55, 0xBA, 0xE6,
+	0xD7, 0x6E, 0xE7, 0xFD, 0x35, 0x80, 0x76, 0x71, 0x09, 0x3D, 0xFD, 0xED,
+	0x11, 0xDD, 0x34, 0x21, 0xAA, 0x52, 0xA1, 0x22, 0x84, 0x01, 0x48, 0x04,
+	0x46, 0xBA, 0x12, 0xFF,
+	// counter 2
+	0xFF, 0xFF, DONE, 0x01, 0x00, 0x00, 0x00, 0x78, 0xE6, 0x05, 0x55, 0xEE,
+	0x6B, 0xFE, 0xC1, 0x4E, 0x5C, 0x2D, 0xF0, 0x7F, 0x51, 0x89, 0xFD, 0x65,
+	0xDF, 0xD2, 0x2C, 0x4C, 0xFF, 0x08, 0x71, 0x35, 0x2E, 0xFF, 0x24, 0x20,
+	0xEE, 0xA9, 0x5E, 0x21, 0xAA, 0x52, 0xA1, 0x22, 0x84, 0x01, 0x48, 0x04,
+	0x46, 0xBA, 0x12, 0xFF,
+	// counter 3
+	0xFF, 0xFF, DONE, 0x01, 0x00, 0x00, 0x00, 0x97, 0xDA, 0xAD, 0x6C, 0xCF,
+	0x1B, 0x10, 0xFF, 0x17, 0x3D, 0xE0, 0x05, 0x37, 0xCB, 0xD1, 0x98, 0x46,
+	0xC2, 0x97, 0xFD, 0x07, 0xF3, 0x17, 0xE3, 0x00, 0xB7, 0xF4, 0x4C, 0xAB,
+	0xCE, 0x38, 0x49, 0x21, 0xAA, 0x52, 0xA1, 0x22, 0x84, 0x01, 0x48, 0x04,
+	0x46, 0xBA, 0x12, 0xFF,
+};
+#else
+
+const static uint32_t done_update_msg[] = {
+	// counter 0
+	0xFFFF8001, 0x0000009D, 0xC5E8D24C, 0xE7516F88,
+	0xA668FDEC, 0x948F35F3, 0xC3D185F9, 0xCACB50B4,
+	0xFF82FA36, 0xDABD6921, 0xAA52A122, 0x84014804,
+	0x46BA1200,
+	// counter 1
+	0xFFFF8001, 0x000000C3, 0xC09252E2, 0x14534307,
+	0xA2555F0C, 0x8655BAE6, 0xD76EE7FD, 0x35807671,
+	0x093DFDED, 0x11DD3421, 0xAA52A122, 0x84014804,
+	0x46BA1200,
+	// counter 2
+	0xFFFF8001, 0x00000078, 0xE60555EE, 0x6BFEC14E,
+	0x5C2DF07F, 0x5189FD65, 0xDFD22C4C, 0xFF087135,
+	0x2EFF2420, 0xEEA95E21, 0xAA52A122, 0x84014804,
+	0x46BA1200,
+	// counter 3
+	0xFFFF8001, 0x00000097, 0xDAAD6CCF, 0x1B10FF17,
+	0x3DE00537, 0xCBD19846, 0xC297FD07, 0xF317E300,
+	0xB7F44CAB, 0xCE384921, 0xAA52A122, 0x84014804,
+	0x46BA12FF,
+};
+
+#endif
+
 // the buffers' sizes must be 4-byte aligned
 static_assert(sizeof(wait_msg) % 4 == 0);
-static_assert(sizeof(done_msg) % 4 == 0);
+//static_assert(sizeof(done_msg) % 4 == 0);
+static_assert(sizeof(done_update_msg) % 4 == 0);
+static_assert(sizeof(done_update_msg) % 52 == 0);
 
 void interpose_intel()
 {
     struct rpmc_command_info info;
-    info.dummy[0] = done_msg[0];
-    info.dummy[1] = done_msg[1];
+    info.dummy[0] = 0xFF; // done_msg[0];
+    info.dummy[1] = 0xFF; // done_msg[1];
 
     while (true) {
         listen_for_op1(&info);
@@ -138,7 +199,7 @@ void interpose_intel()
             //counter_values[info.counter]++;
         } else if (info.kind == GET) {
 
-            interposer_send(wait_msg, 4);
+            interposer_send_words(wait_msg, 1);
 
             // we overwrite the counter address with its value, so we need to
             // calculate this before
@@ -153,7 +214,7 @@ void interpose_intel()
             info.status = DONE;
 
             // send a short done first
-            interposer_send(done_msg, 4);
+            interposer_send_words(done_update_msg, 1);
 
             size_t size = info.get.end - (uint8_t *)&info;
             static_assert(!(offsetof(struct rpmc_command_info, get.end) % 4));
@@ -162,8 +223,9 @@ void interpose_intel()
             interposer_stop();
 
         } else if (info.kind == UPDATE_HMAC_KEY) {
-            interposer_send(wait_msg, 4);
+            //interposer_send_words(wait_msg, 1);
 
+#if 0
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
                             hmac_keys + HMAC_KEY_SIZE * info.update.counter,
                             HMAC_KEY_SIZE,
@@ -171,6 +233,7 @@ void interpose_intel()
                             info.update.signature - info.update.key_data,
                             info.update.signature);
             info.status = DONE;
+#endif
 
 
             // status short
@@ -179,14 +242,19 @@ void interpose_intel()
             // done_msg until it was accepted fully (via the return value), but
             // this currently doesn't work due to too long delays. see the TODO
             // comment above interposer_send.
-            interposer_send(done_msg, 4);
+            const uint32_t *msg = done_update_msg + info.update.counter * 13;
+            interposer_send_words(msg, 1);
 
-#if 0
-            size_t size = offsetof(struct rpmc_command_info, update.end);
-            static_assert(!(offsetof(struct rpmc_command_info, update.end) % 4));
-            interposer_send((const uint8_t *)&info, size);
+#if 1
+            //size_t size = offsetof(struct rpmc_command_info, update.end);
+            //static_assert(!(offsetof(struct rpmc_command_info, update.end) % 4));
+            //interposer_send((const uint8_t *)&info, size);
+
+            interposer_send_words(msg, 13);
 #else
-            interposer_send(done_msg, sizeof(done_msg));
+            interposer_send_words(done_update_msg, 13);
+            //interposer_send(done_msg, 52);
+            //printf("msg: %x, %x, %x, %x, %x, %x, ...\n", msg[7], msg[8], msg[9], msg[10], msg[11], msg[12]);
 #endif
 
             interposer_stop();

@@ -435,6 +435,29 @@ uint32_t interposer_send(const uint8_t * data, const uint32_t count)
     return remaining + 1;
 }
 
+uint32_t interposer_send_words(const uint32_t *data, const uint32_t count)
+{
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, count * 4 * 8 - 1);
+
+    for (size_t i = 0; i < count; i++)
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, data[i]);
+
+#if 0
+    printf("after push\n");
+    printf("tx empty: %d\n", pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
+    printf("rx empty: %d\n", pio_sm_is_rx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
+#endif
+
+    uint32_t remaining;
+    remaining = pio_sm_get_blocking(interposer_inst.pio, interposer_inst.sm);
+
+    if (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm)) {
+        printf("Error: State machine FIFO should be empty\n");
+    }
+
+    return remaining + 1;
+}
+
 void interposer_stop()
 {
     pio_sm_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, 0);
