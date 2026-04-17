@@ -34,7 +34,6 @@ bitloop:
     ; wait for rising clock edge
     wait 1 gpio CLK
     in pins, 1
-    jmp PIN match           ; break out of bitloop if cs is high
     jmp x--, bitloop
 
     ; compare read bits
@@ -49,6 +48,9 @@ bitloop:
 .wrap_target
 sampleloop:
     nop     [1]
+    ; TODO: could this elevate the need of restarting the state machine?
+    ; maybe combined with a non blocking push?
+    ;jmp PIN match           ; break out of bitloop if cs is high
     wait 1 gpio CLK
     in pins, 1
 .wrap

@@ -221,6 +221,7 @@ void interpose_intel()
             interposer_send((const uint8_t *)&info, size);
 
             interposer_stop();
+            putchar('g');
 
         } else if (info.kind == UPDATE_HMAC_KEY) {
             //interposer_send_words(wait_msg, 1);
@@ -258,6 +259,7 @@ void interpose_intel()
 #endif
 
             interposer_stop();
+            putchar('u');
         }
     }
 }
