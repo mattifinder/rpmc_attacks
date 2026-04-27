@@ -33,13 +33,13 @@ wait_cs:
 bitloop:
     ; wait for rising clock edge
     wait 1 gpio CLK
-    in pins, 1 
-    jmp PIN match           ; break out of bitloop if cs is high
+    in pins, 1
     jmp x--, bitloop
 
     ; compare read bits
     mov x, isr              ; move bits read to x
     jmp x!=y, match         ; continue if bits don't match
+    ; notify the other state machine to enable the mux pin (if it is running)
     irq clear 4
     push
 
@@ -48,8 +48,11 @@ bitloop:
 .wrap_target
 sampleloop:
     nop     [1]
+    ; TODO: could this elevate the need of restarting the state machine?
+    ; maybe combined with a non blocking push?
+    ;jmp PIN match           ; break out of bitloop if cs is high
     wait 1 gpio CLK
-    in pins, 1 
+    in pins, 1
 .wrap
 
 public set_pins:
@@ -61,37 +64,94 @@ public set_pins:
 ;-------------------------------------------------------------------------------------------------------------------------;
 
 .program spi_slave
+; CLK on gpio 10?
 .define CLK 10
 
+.wrap_target
 public start:
-    set x, 1
-loop:
-    mov osr, x
-    out null, 31
-    out pins, 1
+    ; here we wait for chip select to go low
+    ; while we wait miso should be high!
+    set pins, 1
+
+    ; get the bit count (one less than actual)
+    out x, 32
+
+    ; wait for cs to go low
     wait 1 JMPPIN
     wait 0 JMPPIN
 
-    nop [4]
-    
-.wrap_target
+    ; we might need this again for consistency
+    ;nop [4]
+
+loop:
+    ; break out of bitloop if cs is high
+    jmp PIN clear_osr
+
+    ; wait for falling edge of CLK
     wait 0 gpio CLK
-    out pins, 1         [1]
-    jmp PIN loop           ; break out of bitloop if cs is high
+
+    ; this was not fast enough so we replaced it with another jmp pin ...
+    ;wait 1 gpio CLK
+
+    ; break out of bitloop if cs is high
+    jmp PIN clear_osr
+
+    ; write out bit
+    out pins, 1
+
+    ; loop while there are still bits left
+    jmp x--, loop
+
+    ; if we arrived here, we were able to write all bits before CS went up
+    ; again. this means we can skip clearing the OSR
+    jmp end
+
+; clear remaining bits from OSR
+clear_osr:
+    mov y, x
+clear_osr_loop:
+    out null, 1
+    jmp y--, clear_osr_loop
+
+end:
+    ; push number of bits left
+    in x, 32
 .wrap
 
 ;-------------------------------------------------------------------------------------------------------------------------;
 
 % c-sdk {
-struct rpmc_command_info {
-    enum {
-        WRITE_ROOT_KEY,
-        UPDATE_HMAC_KEY,
-        INCREMENT,
-        GET,
-    } kind;
-    unsigned int target_counter;
-    uint8_t tag[12];
+struct __attribute((__packed__)) rpmc_command_info {
+    uint8_t dummy[2];
+    union {
+        enum: uint8_t {
+            WRITE_ROOT_KEY,
+            UPDATE_HMAC_KEY,
+            INCREMENT,
+            GET,
+        } kind;
+        enum : uint8_t{
+            WAIT = 0x01,
+            DONE = 0x80,
+        } status;
+    };
+    union {
+        struct __attribute((__packed__)) {
+            uint8_t key_data[4];
+            uint8_t tag[12];
+            uint8_t signature[32];
+            uint8_t _align_pad;
+            uint8_t end[0];
+            uint8_t counter;
+        } update;
+        struct __attribute((__packed__)) {
+            uint8_t tag[12];
+            uint32_t counter;
+            uint8_t signature[32];
+            uint8_t _align_pad;
+            uint8_t end[0];
+        } get;
+    };
 };
 
 struct pio_metadata {
@@ -125,7 +185,7 @@ static void rpmc_sniffer_cleanup() {
     }
 }
 
-static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned int s1, const unsigned int s2) {
+static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned int mux, const unsigned int lls) {
 
     rpmc_sniffer_cleanup();
 
@@ -147,13 +207,13 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     gpio_set_input_hysteresis_enabled(mosi, false);
     pio_gpio_init(rpmc_sniffer_inst.pio, cs);
 
-    pio_gpio_init(rpmc_sniffer_inst.pio, s1);
-    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, s1, 1, true);
-    pio_sm_set_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, s1, 1);
+    pio_gpio_init(rpmc_sniffer_inst.pio, mux);
+    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, mux, 1, true);
+    pio_sm_set_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, mux, 1);
 
-    pio_gpio_init(rpmc_sniffer_inst.pio, s2);
-    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, s2, 1, true);
-    pio_sm_set_sideset_pins(rpmc_sniffer_inst.pio, pin_setter_sm, s2);
+    pio_gpio_init(rpmc_sniffer_inst.pio, lls);
+    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, lls, 1, true);
+    pio_sm_set_sideset_pins(rpmc_sniffer_inst.pio, pin_setter_sm, lls);
 
     rpmc_sniffer_inst.cfg = rpmc_sniffer_program_get_default_config(rpmc_sniffer_inst.offset);
 
@@ -171,7 +231,8 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     // 125 MHz
     sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
 
-    sm_config_set_sideset_pin_base(&rpmc_sniffer_inst.cfg, s2);
+    sm_config_set_set_pins(&rpmc_sniffer_inst.cfg, mux, 1);
+    sm_config_set_sideset_pin_base(&rpmc_sniffer_inst.cfg, lls);
 
 
     rpmc_sniffer_inited = true;
@@ -195,9 +256,11 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, unsigned miso)
 
     // io mapping (inputs 0:svd)
     sm_config_set_out_pins(&interposer_inst.cfg, miso, 1);
+    sm_config_set_set_pins(&interposer_inst.cfg, miso, 1);
     pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, miso, 1, true);
 
-    sm_config_set_out_shift(&interposer_inst.cfg, false, true, 8);
+    sm_config_set_in_shift(&interposer_inst.cfg, false, true, 32);
+    sm_config_set_out_shift(&interposer_inst.cfg, false, true, 32);
 
     // setup cs as jump pins
     sm_config_set_jmp_pin(&interposer_inst.cfg, cs);
@@ -215,60 +278,71 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, unsigned miso)
     interposer_inited = true;
 }
 
+inline void reverse_inplace(uint32_t *x)
+{
+    *x = (*x << 24) | ((*x << 8) & 0xFF0000) | ((*x >> 8) & 0xFF00) | (*x >> 24);
+}
+
+static void u32_into_u8(uint32_t *u32, uint8_t *u8, size_t count)
+{
+    size_t i = 0;
+    for (i = 0; i < (count / 4); ++i) {
+        u8[i * 4 + 0] = (u32[i] >> 24) & 0xFF;
+        u8[i * 4 + 1] = (u32[i] >> 16) & 0xFF;
+        u8[i * 4 + 2] = (u32[i] >>  8) & 0xFF;
+        u8[i * 4 + 3] = (u32[i]      ) & 0xFF;
+    }
+
+    for (size_t j = 0; j < (count % 4); ++j)
+        u8[i * 4 + j] = (u32[i] >> (24 - 8 * j)) & 0xFF;
+}
+
 static void parse_rpmc_command(struct rpmc_command_info * info)
 {
-    enum trigger_state {
-        INITIAL,
-        RPMC_OP_RECIEVED,
-        CAPTURING_GET,
-        CAPTURING_INCREMENT
-    };
-    enum trigger_state state = INITIAL;
+    uint32_t op1 = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
-    while (true) {
-        uint32_t byte = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
-        printf("0x%08x\n", byte);
+    uint32_t more[5];
+    for (size_t i = 0; i < count_of(more); ++i)
+        more[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+    uint32_t dword = more[0];
 
-        switch (state) {
-            case INITIAL:
-                switch (byte) {
-                    case 0x00:
-                        info->kind = WRITE_ROOT_KEY;
-                        return;
-                    case 0x01:
-                        info->kind = UPDATE_HMAC_KEY;
-                        return;
-                    case 0x02:
-                        info->kind = INCREMENT;
-                        state = CAPTURING_INCREMENT;
-                        break;
-                    case 0x03:
-                        info->kind = GET;
-                        state = CAPTURING_GET;
-                        break;
-                    default:
-                        printf("Error: should not happen");
-                        return;
-                }
-                break;
-            case CAPTURING_INCREMENT:
-                info->target_counter = byte;
-                return;
-            case CAPTURING_GET:
-                info->target_counter = byte;
+    uint8_t cmd_byte = (dword >> 24);
 
-                pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm); // dummy byte
-                
-                for (size_t i = 0; i < 12; i++){
-                    info->tag[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
-                }
+    switch (cmd_byte) {
+        case 0x00:
+            printf("write_root_key\n");
+            info->kind = WRITE_ROOT_KEY;
+            return;
+        case 0x01:
+            info->kind = UPDATE_HMAC_KEY;
+            info->update.counter = (dword >> 16) & 0xFF;
 
-                return;
-        }
+            info->update.key_data[0] = more[0] & 0xFF;
+            // this copies key_data and the tag
+            u32_into_u8(&more[1], &info->update.key_data[1], sizeof(info->update.key_data) + sizeof(info->update.tag) - 1);
+
+            return;
+        case 0x02:
+            printf("increment\n");
+            info->kind = INCREMENT;
+            // TODO: here we have to get counter_data
+            return;
+        case 0x03:
+            // NOTE: beware that we don't have much time between a get and its
+            // status, so we can't print anything here
+            info->kind = GET;
+            info->get.counter = (dword >> 16) & 0xFF;
+
+            info->get.tag[0] = more[0] & 0xFF;
+            u32_into_u8(&more[1], &info->get.tag[1], sizeof(info->get.tag) - 1);
+            return;
+        default:
+            printf("Error: unknown byte, should not happen\n");
+            return;
     }
 }
 
-static int rpmc_interpose(struct rpmc_command_info * info) {
+static int listen_for_op1(struct rpmc_command_info * info) {
     int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
@@ -276,10 +350,15 @@ static int rpmc_interpose(struct rpmc_command_info * info) {
     }
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
 
+    // tell the sample loop to look for the OP1 byte
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9b);
 
-    // wait until command is received
-    pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+#if 0
+    // NOTE: We don't have to wait here until the rx FIFO contains something,
+    // since parse_rpmc_command blocks anyways
+#else
+    //pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+#endif
 
     parse_rpmc_command(info);
 
@@ -287,7 +366,8 @@ static int rpmc_interpose(struct rpmc_command_info * info) {
     return 0;
 }
 
-static int __time_critical_func(trigger_get)(void (*callback)(void)) {
+static int __time_critical_func(listen_for_op2_and_mux)() {
+    // TODO: init could be done only once
     int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
@@ -298,30 +378,91 @@ static int __time_critical_func(trigger_get)(void (*callback)(void)) {
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
         return rc;
-    } 
+    }
 
+    // TODO: rewrite comment
+    // enable the two state machines. the first looks for the match byte and
+    // sends an irq to the second which then enables the mux pin
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, true);
 
+    // set match byte to op2
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x96);
 
     // wait until command is received
     while (pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm))
         tight_loop_contents();
-    
-    //callback();
 
+    // disable the state machines again
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, false);
     return 0;
 }
 
-void interposer_send(const uint8_t * data, const size_t size)
+/*
+ * TODO: when the bytecount is way bigger than what is actually written during
+ * low chip select, this function takes a long time since it still writes
+ * everything into the FIFO. Improve this by checking if the rx FIFO contains
+ * something before every put and abort in that case. This way we could always
+ * send the long status without running into delays.
+ *
+ * size of the buffer behind data must be at least `(count + 3) / 4 * 4` big
+ */
+uint32_t interposer_send(const uint8_t * data, const uint32_t count)
 {
-    for (size_t i = 0; i < size; i++) {
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, data[i] << 24);
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, count * 8 - 1);
+
+    for (size_t i = 0; i < (count + 3) / 4; i++) {
+         uint32_t word = 0;
+         word |= data[i * 4 + 0] << 24;
+         word |= data[i * 4 + 1] << 16;
+         word |= data[i * 4 + 2] << 8;
+         word |= data[i * 4 + 3];
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, word);
     }
 
-    while (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm))
-        tight_loop_contents();
+#if 0
+    printf("after push\n");
+    printf("tx empty: %d\n", pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
+    printf("rx empty: %d\n", pio_sm_is_rx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
+#endif
+
+    uint32_t remaining;
+    remaining = pio_sm_get_blocking(interposer_inst.pio, interposer_inst.sm);
+
+    if (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm)) {
+        printf("Error: State machine FIFO should be empty\n");
+    }
+
+    return remaining + 1;
 }
+
+uint32_t interposer_send_words(const uint32_t *data, const uint32_t count)
+{
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, count * 4 * 8 - 1);
+
+    for (size_t i = 0; i < count; i++)
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, data[i]);
+
+#if 0
+    printf("after push\n");
+    printf("tx empty: %d\n", pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
+    printf("rx empty: %d\n", pio_sm_is_rx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
+#endif
+
+    uint32_t remaining;
+    remaining = pio_sm_get_blocking(interposer_inst.pio, interposer_inst.sm);
+
+    if (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm)) {
+        printf("Error: State machine FIFO should be empty\n");
+    }
+
+    return remaining + 1;
+}
+
+void interposer_stop()
+{
+    pio_sm_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, 0);
+}
+
 %}

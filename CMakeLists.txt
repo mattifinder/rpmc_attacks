@@ -4,6 +4,7 @@ set(PICO_BOARD pico2_w)
 set(CMAKE_C_STANDARD 23)
 set(COMMON_COMPILE_OPTIONS -Wall -Wextra)
 set(PICO_USE_FASTEST_SUPPORTED_CLOCK 1)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # initialize the SDK based on PICO_SDK_PATH
 # note: this must happen before project()
