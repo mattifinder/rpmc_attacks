@@ -10,6 +10,7 @@ Projects are tested on the **pico 2 W**.
 The `pocs` directory contains the python scripts we used to test some of our attacks.
 The `kvm_scripts` directory contains the scripts we used on for our nano kvm to film the demo video and test the full end-to-end pin brute force.
 `src` houses the firmware code for the pico, better explained in the next section.
+The `interposer-pdb` directory contains the kicad project for the interposer pcb.
 
 ## Subprojects
 
