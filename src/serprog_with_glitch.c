@@ -1,6 +1,4 @@
 /**
- * Written by Matti Finder - matti.finder@gmail.com
- *
  * Licensed under GPLv3
  *
  * Heavily based on pico-serprog:

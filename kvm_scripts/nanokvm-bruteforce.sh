@@ -1,23 +1,4 @@
 #!/bin/sh
-#
-# To be executed on a different host.
-#
-# The nanokvm's 443 port needs to be forwarded to local 8080. For example with:
-#
-#ssh -N -L 8080:192.168.1.222:443 sect-proxy
-#
-# The ssh config should look something like this:
-#
-#     Host sect-proxy
-#         Hostname tiger-experiments.sect.tu-berlin.de
-#         User user
-#         IdentityFile ~/.ssh/sect
-#
-#     Host sect-nanokvm
-#         Hostname 192.168.1.222
-#         User root
-#         IdentityFile ~/.ssh/sect
-#         ProxyJump sect-proxy
 set -xe
 
 FIFO_FILE="$(mktemp -d)"/commands.fifo
