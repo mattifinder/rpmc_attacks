@@ -295,7 +295,7 @@ void __attribute__((optimize("O0"), noinline)) __time_critical_func(wait_delay)(
 
 void __time_critical_func(core1_glitch_pulldown_loop)(void)
 {
-    volatile size_t delay = 19;
+    volatile size_t delay = 5;
     while (true) {
         volatile uint32_t glitch_cycles = multicore_fifo_pop_blocking();
         // Synchronize with core0
@@ -317,7 +317,7 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
 void __time_critical_func(brute_force_delay)(void)
 {
     while (true) {
-        for (volatile size_t delay = 0; delay < 30; delay += 2){
+        for (volatile size_t delay = 0; delay < 5; delay += 1){
             volatile uint32_t glitch_cycles = multicore_fifo_pop_blocking();
             // Synchronize with core0
             multicore_fifo_push_blocking(0);
@@ -344,7 +344,7 @@ int main() {
     bi_decl(bi_1pin_with_name(PIN_CS, "CS"));
     bi_decl(bi_1pin_with_name(GLITCH_PIN, "GLITCH PIN"));
     bi_decl(bi_3pins_with_func(PIN_MISO, PIN_SCK, PIN_MOSI, GPIO_FUNC_SPI));
-    bi_decl(bi_3pins_with_names(PIN_DIR_A, "3V3 to 1V8 enable", PIN_DIR_B, "1V8 to 3V3 enable", PIN_1V8_OE, "Logic converter output enable"));
+    bi_decl(bi_3pins_with_names(PIN_DIR_A, "Upper bank pins at logic level shifter", PIN_DIR_B, "lower bank pins at logic level shifter", PIN_1V8_OE, "logic level shifter output enable"));
 
     stdio_init_all();
     stdio_set_translate_crlf(&stdio_usb, false);
@@ -357,6 +357,7 @@ int main() {
     // Glitch pin shorts the voltage of the chip to ground when it is set high
     gpio_init(GLITCH_PIN);
     gpio_put(GLITCH_PIN, 0);
+    gpio_set_slew_rate(GLITCH_PIN, GPIO_SLEW_RATE_FAST);
     gpio_set_dir(GLITCH_PIN, GPIO_OUT);
 
     // Initialize CS
@@ -373,7 +374,7 @@ int main() {
     gpio_put(PIN_DIR_B, 0);
     gpio_set_dir(PIN_DIR_B, GPIO_OUT);
     
-    // configure 1V8 output manually
+    // configure 1V8 output manually is active low
     gpio_init(PIN_1V8_OE);
     gpio_pull_up(PIN_1V8_OE);
 

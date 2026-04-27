@@ -1,5 +1,5 @@
 import time
-
+import json
 from serprog import Serprog
 from rpmc_ops import *
 from datetime import datetime
@@ -92,6 +92,7 @@ def leak_hmac_key(target_counter: int, key_data: bytes):
                         print(f'Key {signature.hex()} works for counter {target_counter}')
                         with open(f'key_slot_{target_counter}_{key_data.hex()}.bin', 'wb') as f:
                             f.write(signature)
+                            return
                         break
                     except RuntimeError as e:
                         print(e)
@@ -140,18 +141,35 @@ def glitch_get(target_counter: int):
     rpmc_update_hmac_key(chip, key, target_counter, b'\x00\x00\x00\x00')
     baseline = rpmc_get_counter(chip, key, target_counter, tag=b'\xaa' * 12)
     base_status = rpmc_get_status(chip)
+    result_data = {}
 
     for _ in range(1):
-        for glitch_cycles in range(7000, 10000):
-            for delay in range(0, 30, 2):
+        for glitch_cycles in range(10000, 15000):
+            if glitch_cycles not in result_data:
+                result_data[glitch_cycles] = {
+                    'results': {},
+                    'tries': 0
+                }
+
+            results = result_data[glitch_cycles]
+            for delay in range(0, 5):
+                if delay not in results:
+                    results[delay] = {
+                        'normal fails': 0,
+                        'wrong values': 0,
+                        'no effect': 0
+                    }
                 rpmc_update_hmac_key(chip, key, target_counter, b'\x00\x00\x00\x00')
                 try:
-                    val = rpmc_get_counter(chip, key, target_counter, tag=b'\xaa' * 12, glitch_cycles=glitch_cycles)
+                    val = rpmc_get_counter(chip, key, target_counter, glitch_cycles=glitch_cycles)
                     if val != baseline:
                         print(f'Delay {glitch_cycles} + {delay}: Value differs {val} != {baseline}')
-                        return
+                        results[delay]['wrong values'] += 1
+                    else:
+                        results[delay]['no effect'] += 1
                 except RuntimeError as e:
-                    print(f'Delay {glitch_cycles} + {delay}: {e}')
+                    results[delay]['normal fails'] += 1
+                    #print(f'Delay {glitch_cycles} + {delay}: {e}')
                     full_status = rpmc_get_status(chip)
                     if entropy(full_status) != 0.0 and full_status[1:] != base_status[1:]:
                         pretty_print_status(full_status)
@@ -159,8 +177,13 @@ def glitch_get(target_counter: int):
                     print(f'Delay {glitch_cycles} + {delay}: Timeout')
                     return
 
+                results['tries'] += 1
+
+    with open('results.json', 'w') as f:
+        json.dump(result_data, f, indent=4)
+
 if __name__ == '__main__':
-    #glitch_increment_counter(0)
-    #leak_hmac_key(0, b'\x00\x00\x00\x00')
+    #glitch_increment_counter(1)
+    leak_hmac_key(1, b'\x00\x00\x00\x00')
     #brute_force_space(0, debug=False)
-    glitch_get(0)
+    #glitch_get(1)
