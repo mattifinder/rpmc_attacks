@@ -222,7 +222,7 @@ void process(spi_inst_t * spi, int command) {
     }
 }
 
-void __attribute__((optimize("O0"), noinline)) __time_critical_func(wait_delay)(const size_t delay)
+inline static void __attribute((always_inline)) __time_critical_func(wait_delay)(const size_t delay)
 {
     switch (delay)
     {
@@ -293,7 +293,7 @@ void __attribute__((optimize("O0"), noinline)) __time_critical_func(wait_delay)(
 
 void __time_critical_func(core1_glitch_pulldown_loop)(void)
 {
-    volatile size_t delay = 5;
+    volatile size_t delay = 21;
     while (true) {
         volatile uint32_t glitch_cycles = multicore_fifo_pop_blocking();
         // Synchronize with core0
@@ -315,7 +315,7 @@ void __time_critical_func(core1_glitch_pulldown_loop)(void)
 void __time_critical_func(brute_force_delay)(void)
 {
     while (true) {
-        for (volatile size_t delay = 0; delay < 5; delay += 1){
+        for (volatile size_t delay = 20; delay < 30; delay += 1){
             volatile uint32_t glitch_cycles = multicore_fifo_pop_blocking();
             // Synchronize with core0
             multicore_fifo_push_blocking(0);
@@ -371,7 +371,7 @@ int main() {
     gpio_init(PIN_DIR_B);
     gpio_put(PIN_DIR_B, 0);
     gpio_set_dir(PIN_DIR_B, GPIO_OUT);
-    
+
     // configure 1V8 output manually is active low
     gpio_init(PIN_1V8_OE);
     gpio_pull_up(PIN_1V8_OE);

@@ -65,10 +65,10 @@ int loop(spi_inst_t * const spi_connection, const unsigned int led_pin, const un
         if ((next_counter_value ^ curr_counter_value) & (1 << 14)) {
             led_state = !led_state;
             cyw43_arch_gpio_put(led_pin, led_state);
+            printf("Successfully incremented to %u\n", curr_counter_value);
         }
 
         curr_counter_value = next_counter_value;
-        printf("Successfully incremented to %u\n", curr_counter_value);
     }
 
     return 0;
@@ -81,7 +81,6 @@ int main()
     bi_decl(bi_3pins_with_names(PIN_DIR_A, "3V3 to 1V8 enable", PIN_DIR_B, "1V8 to 3V3 enable", PIN_1V8_OE, "Logic converter output enable"));
 
     stdio_init_all();
-    stdio_set_translate_crlf(&stdio_usb, false);
 
     hard_assert(cyw43_arch_init() == 0);
 

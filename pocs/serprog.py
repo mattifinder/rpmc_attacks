@@ -38,4 +38,4 @@ class Serprog:
 
 
 if __name__ == '__main__':
-    print(Serprog('/dev/ttyACM0', 1_000_000).exchange(b'\x9f', 3))
+    print(Serprog('/dev/ttyACM0', 1_000_000).exchange(b'\x9f', 3).hex())
