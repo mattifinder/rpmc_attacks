@@ -11,28 +11,28 @@
 #include "psp_nvdata.h"
 
 
-#define PIN_N_MUX_EN 16
+#define PIN_N_MUX_EN 17
 bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
-#define PIN_MUX_INTERPOSE 18
+#define PIN_MUX_INTERPOSE 16
+bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico)"));
 
-#define PIN_N_LLS_OE 17
+#define PIN_CHIP_VOLT_SEL 23
+#define PIN_CHIP_VOLT_MODE 24
 
-#define PIN_LLS_1DIR 22
-#define PIN_LLS_2DIR 19
+#define PIN_PICO_OUT_SPI_MOSI_DQ0 12
+#define PIN_PICO_OUT_SPI_SCK 13
+#define PIN_PICO_OUT_SPI_DQ2 14
+#define PIN_PICO_OUT_SPI_CS 15
+#define PIN_PICO_OUT_SPI_DQ3 21
+#define PIN_PICO_OUT_SPI_MISO_DQ1 22
 
-#define CAPTURE_SPI spi0
-#define MASTER_SPI CAPTURE_SPI
-#define PIN_CHIP_SPI_CLK 2
-#define PIN_CHIP_MASTER_SPI_RX 3
-#define PIN_CHIP_MASTER_SPI_TX 4
-#define PIN_CHIP_SPI_CS 5
-#define PIN_CHIP_SPI_READ_RX 0
+#define PIN_PICO_BOARD_SPI_MOSI_DQ0 1
+#define PIN_PICO_BOARD_SPI_CLK 2
+#define PIN_PICO_BOARD_SPI_HOLD_DQ3 3
+#define PIN_PICO_BOARD_SPI_WP_DQ2 4
+#define PIN_PICO_BOARD_SPI_MISO_DQ1 5
+#define PIN_PICO_BOARD_SPI_CS 6
 
-#define OUTPUT_SPI spi1
-#define PIN_PICO_BOARD_SPI_CLK 10
-#define PIN_PICO_BOARD_SPI_TX 11
-#define PIN_PICO_BOARD_SPI_RX 12
-#define PIN_PICO_BOARD_SPI_CS 13
 
 #define HMAC_KEY_SIZE 32
 
@@ -54,7 +54,7 @@ inline uint32_t reverse(const uint32_t x)
 
 static inline void __time_critical_func(interpose_no_push)()
 {
-    gpio_set_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
+    gpio_set_mask((1 << PIN_MUX_INTERPOSE));
 }
 
 static inline void __time_critical_func(interpose)()
@@ -65,7 +65,7 @@ static inline void __time_critical_func(interpose)()
 
 static inline void __time_critical_func(stop_interpose)()
 {
-    gpio_clr_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_LLS_1DIR));
+    gpio_clr_mask((1 << PIN_MUX_INTERPOSE));
 }
 
 void __time_critical_func(rpmc_interpose_increment_core1)(void)
@@ -92,7 +92,9 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 
 static uint32_t counter_values[4] = {0xBD, 0xBD, 0, 0};
 // Keys for key_data 01000000
+#define USE_KEYS_FRAMEWORK_2
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
+    # ifdef USE_KEYS_FRAMEWORK_1
     // Key slot 0
     0x70, 0xd1, 0x74, 0x19, 0x8c, 0x7d, 0x97, 0xf0,
     0x3a, 0xd2, 0x8b, 0xfc, 0x5d, 0x86, 0x30, 0xd7,
@@ -113,6 +115,28 @@ const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
     0x6d, 0xf2, 0x35, 0x03, 0xb2, 0x30, 0x2d, 0xa9,
     0xfb, 0x59, 0xe7, 0x58, 0x2b, 0xa4, 0x2d, 0x5d,
     0x03, 0x74, 0x03, 0x92, 0x3e, 0x2f, 0xeb, 0x28
+    #elifdef USE_KEYS_FRAMEWORK_2
+    // Key Slot 0
+    0xf4, 0x27, 0xad, 0xa3, 0x76, 0x79, 0x6f, 0x27,
+    0x78, 0x10, 0x78, 0xb2, 0x0a, 0x6c, 0x68, 0x79,
+    0x69, 0x3b, 0x90, 0x35, 0x1b, 0x99, 0x5a, 0xe5,
+    0x3b, 0x7c, 0x6e, 0x14, 0x54, 0x6c, 0x69, 0xaa,
+    // Key Slot 1
+    0x1b, 0x3b, 0x9d, 0x0f, 0xd0, 0x78, 0xee, 0x45,
+    0xc1, 0x28, 0xe3, 0xdb, 0x8d, 0x4d, 0xac, 0x6d,
+    0x67, 0x21, 0x1a, 0xe6, 0xb6, 0x64, 0x43, 0x27,
+    0x7e, 0x10, 0xcd, 0x62, 0x1b, 0x42, 0x08, 0x15,
+    // Key Slot 2
+    0x3d, 0xfd, 0x42, 0x26, 0x75, 0x56, 0x74, 0x73,
+    0x2b, 0x72, 0x71, 0xb3, 0x59, 0xb1, 0xe9, 0x5c,
+    0xd4, 0x8c, 0x8e, 0xf9, 0x55, 0x4f, 0xf2, 0x5d,
+    0x5b, 0x25, 0x19, 0xc5, 0x24, 0x02, 0xe7, 0x68,
+    // Key Slot 3
+    0x5e, 0x7d, 0x55, 0xcd, 0x06, 0xbb, 0x1e, 0x07,
+    0x91, 0xe6, 0x3b, 0xc3, 0x8a, 0x9b, 0xa0, 0xff,
+    0x27, 0xd6, 0x3b, 0x75, 0x53, 0xdc, 0xf7, 0x0d,
+    0x31, 0x4e, 0x83, 0xb6, 0x03, 0x6d, 0xaf, 0xa9
+    #endif
 };
 
 const static uint32_t wait_msg[] = {0xffff0100};
@@ -435,7 +459,33 @@ int main()
 {
     stdio_init_all();
     // TODO: write loop um die flash region zu overwriten
-    goto i;
+
+    // init mux
+    gpio_init_mask64((1 << PIN_N_MUX_EN) | (1 << PIN_MUX_INTERPOSE));
+    gpio_put(PIN_N_MUX_EN, 1); // mux is active low
+    gpio_set_slew_rate(PIN_MUX_INTERPOSE, GPIO_SLEW_RATE_FAST);
+    gpio_set_dir_out_masked64((1 << PIN_N_MUX_EN) | (1 << PIN_MUX_INTERPOSE));
+
+    // initialize voltage switcher
+    gpio_init_mask64((1 << PIN_CHIP_VOLT_MODE) | (1 << PIN_CHIP_VOLT_SEL));
+    gpio_put(PIN_CHIP_VOLT_MODE, 1); // enable switching voltage
+    gpio_put(PIN_CHIP_VOLT_SEL, 1); // use target voltage
+    gpio_set_dir_out_masked64((1 << PIN_CHIP_VOLT_MODE) | (1 << PIN_CHIP_VOLT_SEL));
+
+    // setup capture spi
+    gpio_init_mask64((1 << PIN_PICO_BOARD_SPI_MOSI_DQ0)
+                      | (1 << PIN_PICO_BOARD_SPI_CLK)
+                      | (1 << PIN_PICO_BOARD_SPI_HOLD_DQ3)
+                      | (1 << PIN_PICO_BOARD_SPI_WP_DQ2)
+                      | (1 << PIN_PICO_BOARD_SPI_MISO_DQ1)
+                      | (1 << PIN_PICO_BOARD_SPI_CS));
+    gpio_set_dir_in_masked64((1 << PIN_PICO_BOARD_SPI_MOSI_DQ0)
+                      | (1 << PIN_PICO_BOARD_SPI_CLK)
+                      | (1 << PIN_PICO_BOARD_SPI_HOLD_DQ3)
+                      | (1 << PIN_PICO_BOARD_SPI_WP_DQ2)
+                      | (1 << PIN_PICO_BOARD_SPI_MISO_DQ1)
+                      | (1 << PIN_PICO_BOARD_SPI_CS));
+    
     switch (getchar()) {
         // interpose amd 
         case 'a':
@@ -450,11 +500,10 @@ int main()
             spi_trigger(UINT16_C(0x9b02), interpose);
             break;
         case 'i':
-        i:
-            init_mux();
-            init_lls(0, 0);
-            rpmc_sniffer_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_MASTER_SPI_RX, PIN_MUX_INTERPOSE, PIN_LLS_1DIR);
-            interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_TX);
+            gpio_put(PIN_N_MUX_EN, 0);
+            gpio_put(PIN_MUX_INTERPOSE, 0);
+            rpmc_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_MUX_INTERPOSE);
+            interposer_pio_init(PIN_PICO_OUT_SPI_CS, PIN_PICO_OUT_SPI_SCK, PIN_PICO_OUT_SPI_MISO_DQ1);
             
             printf("Interposing Intel\n");
             //multicore_launch_core1(interpose_intel_core1);
@@ -468,7 +517,8 @@ int main()
             reprogram_flash(MASTER_SPI, PIN_CHIP_SPI_CS);
             break;
         default: // do nothing just leave chip directly connected
-            init_mux();
+            gpio_put(PIN_N_MUX_EN, 0);
+            gpio_put(PIN_MUX_INTERPOSE, 0);
             printf("Just passing traffic through\n");
             break;
     }

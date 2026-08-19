@@ -64,8 +64,7 @@ public set_pins:
 ;-------------------------------------------------------------------------------------------------------------------------;
 
 .program spi_slave
-; CLK on gpio 10?
-.define CLK 10
+.define CLK 13
 
 .wrap_target
 public start:
@@ -151,6 +150,10 @@ struct __attribute((__packed__)) rpmc_command_info {
             uint8_t _align_pad;
             uint8_t end[0];
         } get;
+        struct {
+            uint8_t target;
+            uint32_t old_value;
+        } increment;
     };
 };
 
@@ -185,7 +188,7 @@ static void rpmc_sniffer_cleanup() {
     }
 }
 
-static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned int mux, const unsigned int lls) {
+static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned int mux) {
 
     rpmc_sniffer_cleanup();
 
@@ -200,7 +203,6 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
         return false;
     }
 
-
     pio_gpio_init(rpmc_sniffer_inst.pio, clk);
     gpio_set_input_hysteresis_enabled(clk, false);
     pio_gpio_init(rpmc_sniffer_inst.pio, mosi);
@@ -210,10 +212,6 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     pio_gpio_init(rpmc_sniffer_inst.pio, mux);
     pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, mux, 1, true);
     pio_sm_set_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, mux, 1);
-
-    pio_gpio_init(rpmc_sniffer_inst.pio, lls);
-    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, lls, 1, true);
-    pio_sm_set_sideset_pins(rpmc_sniffer_inst.pio, pin_setter_sm, lls);
 
     rpmc_sniffer_inst.cfg = rpmc_sniffer_program_get_default_config(rpmc_sniffer_inst.offset);
 
@@ -232,8 +230,6 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
 
     sm_config_set_set_pins(&rpmc_sniffer_inst.cfg, mux, 1);
-    sm_config_set_sideset_pin_base(&rpmc_sniffer_inst.cfg, lls);
-
 
     rpmc_sniffer_inited = true;
     // success
@@ -323,9 +319,9 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
 
             return;
         case 0x02:
-            printf("increment\n");
             info->kind = INCREMENT;
-            // TODO: here we have to get counter_data
+            info->increment.target = (dword >> 16) & 0xFF;
+            info->increment.old_value = ((more[0] & 0xFF) << 24) | ((more[1] >> 8) & 0xFFFFFF);
             return;
         case 0x03:
             // NOTE: beware that we don't have much time between a get and its
@@ -462,7 +458,7 @@ uint32_t interposer_send_words(const uint32_t *data, const uint32_t count)
 
 void interposer_stop()
 {
-    pio_sm_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, 0);
+    pio_sm_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, 1);
 }
 
 %}
