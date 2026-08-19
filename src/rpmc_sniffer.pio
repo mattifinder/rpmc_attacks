@@ -457,7 +457,7 @@ uint32_t interposer_send_words(const uint32_t *data, const uint32_t count)
     return remaining + 1;
 }
 
-void interposer_stop()
+void __time_critical_func(interposer_stop)()
 {
     pio_sm_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, 0);
 }
