@@ -19,6 +19,7 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 #define PIN_CHIP_VOLT_SEL 23
 #define PIN_CHIP_VOLT_MODE 24
 
+// pico -> board
 #define PIN_PICO_OUT_SPI_MOSI_DQ0 12
 #define PIN_PICO_OUT_SPI_SCK 13
 #define PIN_PICO_OUT_SPI_DQ2 14
@@ -26,6 +27,7 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 #define PIN_PICO_OUT_SPI_DQ3 21
 #define PIN_PICO_OUT_SPI_MISO_DQ1 22
 
+// board -> pico
 #define PIN_PICO_BOARD_SPI_MOSI_DQ0 1
 #define PIN_PICO_BOARD_SPI_CLK 2
 #define PIN_PICO_BOARD_SPI_HOLD_DQ3 3
@@ -68,6 +70,7 @@ static inline void __time_critical_func(stop_interpose)()
     gpio_clr_mask((1 << PIN_MUX_INTERPOSE));
 }
 
+#if 0
 void __time_critical_func(rpmc_interpose_increment_core1)(void)
 {
     const static uint8_t status[] = {0xff, // to finish the rpmc transmission
@@ -89,6 +92,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
         stop_interpose();
     }
 }
+#endif
 
 static uint32_t counter_values[4] = {0xBD, 0xBD, 0, 0};
 // Keys for key_data 01000000
@@ -413,6 +417,7 @@ void init_mux()
     gpio_set_slew_rate(PIN_MUX_INTERPOSE, GPIO_SLEW_RATE_FAST);
 }
 
+#if 0
 void init_lls(const bool lls1_dir, const bool lss2_dir)
 {
     gpio_init(PIN_N_LLS_OE);
@@ -454,6 +459,7 @@ void init_spi1_interposer()
     gpio_set_function(PIN_PICO_BOARD_SPI_TX, GPIO_FUNC_SPI);
     gpio_set_function(PIN_PICO_BOARD_SPI_RX, GPIO_FUNC_SPI);
 }
+#endif
 
 int main()
 {
@@ -489,6 +495,7 @@ int main()
     switch (getchar()) {
         // interpose amd 
         case 'a':
+#if 0
             init_mux();
             init_lls(0, 0);
             // initlialize spi trigger
@@ -498,6 +505,7 @@ int main()
 
             multicore_launch_core1(rpmc_interpose_increment_core1);
             spi_trigger(UINT16_C(0x9b02), interpose);
+#endif
             break;
         case 'i':
             gpio_put(PIN_N_MUX_EN, 0);
@@ -510,11 +518,25 @@ int main()
             interpose_intel();
             break;
         case 'r':
+#if 0
             init_lls(1, 0);
             init_spi0_master();
             
             printf("Reprogramming flash sector\n");
             reprogram_flash(MASTER_SPI, PIN_CHIP_SPI_CS);
+#endif
+            break;
+        case 't':
+            printf("Test\n");
+            gpio_put(PIN_N_MUX_EN, 0);
+            gpio_put(PIN_MUX_INTERPOSE, 0);
+
+            while (true) {
+                gpio_put(PIN_MUX_INTERPOSE, 1);
+                sleep_us(100);
+                gpio_put(PIN_MUX_INTERPOSE, 0);
+                sleep_us(100);
+            }
             break;
         default: // do nothing just leave chip directly connected
             gpio_put(PIN_N_MUX_EN, 0);

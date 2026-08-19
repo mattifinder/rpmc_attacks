@@ -64,6 +64,7 @@ public set_pins:
 ;-------------------------------------------------------------------------------------------------------------------------;
 
 .program spi_slave
+; TODO: try PIN_PICO_BOARD_SPI_CLK (2)
 .define CLK 13
 
 .wrap_target
@@ -458,7 +459,7 @@ uint32_t interposer_send_words(const uint32_t *data, const uint32_t count)
 
 void interposer_stop()
 {
-    pio_sm_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, 1);
+    pio_sm_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, 0);
 }
 
 %}
