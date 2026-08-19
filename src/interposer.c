@@ -210,7 +210,7 @@ static_assert(sizeof(wait_msg) % 4 == 0);
 static_assert(sizeof(done_update_msg) % 4 == 0);
 static_assert(sizeof(done_update_msg) % 52 == 0);
 
-void interpose_intel()
+void __time_critical_func(interpose_intel)()
 {
     struct rpmc_command_info info;
     info.dummy[0] = 0xFF; // done_msg[0];
