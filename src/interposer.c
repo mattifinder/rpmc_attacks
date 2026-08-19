@@ -295,6 +295,9 @@ void __time_critical_func(interpose_intel)()
 
             interposer_stop();
             putchar('u');
+        } else {
+            // write root key
+            interposer_stop();
         }
     }
 }
