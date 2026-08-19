@@ -228,7 +228,9 @@ void __time_critical_func(interpose_intel)()
             interposer_send_words(msg, 1);
             interposer_send_words(msg, 13);
             interposer_stop();
-            //counter_values[info.counter]++;
+            if (counter_values[info.increment.target] != info.increment.old_value)
+                putchar('f');
+            counter_values[info.increment.target]++;
             putchar('i');
         } else if (info.kind == GET) {
 
