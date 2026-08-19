@@ -94,7 +94,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 }
 #endif
 
-static uint32_t counter_values[4] = {0xBD, 0xBD, 0, 0};
+static uint32_t counter_values[4] = {1678, 1669, 0, 0};
 // Keys for key_data 01000000
 #define USE_KEYS_FRAMEWORK_2
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
@@ -224,7 +224,12 @@ void interpose_intel()
 
         if (info.kind == INCREMENT) {
             // TODO
+            const uint32_t *msg = done_update_msg + info.update.counter * 13;
+            interposer_send_words(msg, 1);
+            interposer_send_words(msg, 13);
+            interposer_stop();
             //counter_values[info.counter]++;
+            putchar('i');
         } else if (info.kind == GET) {
 
             interposer_send_words(wait_msg, 1);
