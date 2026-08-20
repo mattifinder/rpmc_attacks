@@ -1,3 +1,199 @@
+.program amd_trigger
+
+; TODO: explain this pio program
+; Pin mapping:
+; - in pins: 0 is SPI MOSI
+; - uses gpio pins 2 (SPI CLK)
+; - JMPPIN is SPI CS
+
+.define CLK 2
+
+public start:
+    ; load bits to match into y
+    out y, 32
+
+.wrap_target
+match:
+    set x, 15               ; bits to match (need to be 32)
+    mov isr, null
+
+    ; wait for falling chip select edge
+wait_cs:
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+
+    ; sample the bits to match into x
+bitloop:
+    ; wait for rising clock edge
+    wait 0 gpio CLK
+    wait 1 gpio CLK
+    in pins, 1
+    jmp PIN match           ; break out of bitloop if cs is high
+    jmp x--, bitloop
+
+    ; compare read bits
+    mov x, isr              ; move bits read to x
+    jmp x!=y, match         ; continue if bits don't match
+
+end:
+    push                    ; push a null byte if we matched!
+.wrap
+
+.program amd_spi_slave
+; AMD uses CPOL 0 so we have to adjust accordingly 
+
+.define CLK 13
+
+.wrap_target
+public start:
+    ; here we wait for chip select to go low
+    ; while we wait miso should be high!
+    set pins, 1
+
+    ; get the bit count (one less than actual)
+    pull block
+    out x, 32
+
+    ; wait for cs to go low
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+    jmp loop_start ; need to start by sampling the first bit
+
+loop:
+    wait 1 gpio CLK
+loop_start:
+    out pins, 1
+    wait 0 gpio CLK
+    ; loop while there are still bits left
+    jmp x--, loop
+
+done:
+    push
+.wrap
+
+% c-sdk {
+struct pio_metadata {
+    PIO pio;
+    unsigned int sm;
+    unsigned int offset;
+    pio_sm_config cfg;
+};
+
+static struct pio_metadata amd_trigger_inst;
+static struct pio_metadata amd_interposer_inst;
+
+static int amd_trigger_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
+    if (!pio_claim_free_sm_and_add_program(&amd_trigger_program, &amd_trigger_inst.pio, &amd_trigger_inst.sm, &amd_trigger_inst.offset)) {
+        printf("Error: AMD trigger program could not be loaded/could not claim state machine!\n");
+        return false;
+    }
+
+    pio_gpio_init(amd_trigger_inst.pio, clk);
+    pio_gpio_init(amd_trigger_inst.pio, mosi);
+    pio_gpio_init(amd_trigger_inst.pio, cs);
+
+    amd_trigger_inst.cfg = amd_trigger_program_get_default_config(amd_trigger_inst.offset);
+
+    sm_config_set_in_pins(&amd_trigger_inst.cfg, mosi);
+    sm_config_set_in_pin_count(&amd_trigger_inst.cfg, 1);
+
+    // shifts are msb-first 32-bits
+    sm_config_set_in_shift(&amd_trigger_inst.cfg, false, true, 32);
+    sm_config_set_out_shift(&amd_trigger_inst.cfg, false, true, 32);
+
+    // setup cs as jump pins
+    sm_config_set_jmp_pin(&amd_trigger_inst.cfg, cs);
+
+    // 125 MHz
+    sm_config_set_clkdiv(&amd_trigger_inst.cfg, 1.0f);
+
+    // success
+    return true;
+}
+
+bool amd_interposer_init(unsigned int cs, unsigned int clk, unsigned miso)
+{
+    if (!pio_claim_free_sm_and_add_program(&amd_spi_slave_program, &amd_interposer_inst.pio, &amd_interposer_inst.sm, &amd_interposer_inst.offset)) {
+        printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
+        return false;
+    }
+    pio_gpio_init(amd_interposer_inst.pio, clk);
+    pio_gpio_init(amd_interposer_inst.pio, cs);
+    pio_gpio_init(amd_interposer_inst.pio, miso);
+    // gpio_set_slew_rate(miso, GPIO_SLEW_RATE_FAST);
+    // gpio_set_drive_strength(miso, GPIO_DRIVE_STRENGTH_12MA);
+
+    amd_interposer_inst.cfg = amd_spi_slave_program_get_default_config(amd_interposer_inst.offset);
+
+    // io mapping (inputs 0:svd)
+    sm_config_set_out_pins(&amd_interposer_inst.cfg, miso, 1);
+    sm_config_set_set_pins(&amd_interposer_inst.cfg, miso, 1);
+    pio_sm_set_consecutive_pindirs(amd_interposer_inst.pio, amd_interposer_inst.sm, miso, 1, true);
+
+    sm_config_set_in_shift(&amd_interposer_inst.cfg, false, true, 32);
+    sm_config_set_out_shift(&amd_interposer_inst.cfg, false, true, 32);
+
+    // setup cs as jump pins
+    sm_config_set_jmp_pin(&amd_interposer_inst.cfg, cs);
+
+    // 125 MHz
+    sm_config_set_clkdiv(&amd_interposer_inst.cfg, 1.0f);
+
+    int rc = pio_sm_init(amd_interposer_inst.pio, amd_interposer_inst.sm, amd_interposer_inst.offset + amd_spi_slave_offset_start, &amd_interposer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: AMD interposer failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(amd_interposer_inst.pio, amd_interposer_inst.sm, true);
+}
+
+static int amd_trigger(void (*callback)(void)) {
+    int rc = pio_sm_init(amd_trigger_inst.pio, amd_trigger_inst.sm, amd_trigger_inst.offset + amd_trigger_offset_start, &amd_trigger_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(amd_trigger_inst.pio, amd_trigger_inst.sm, true);
+    pio_sm_clear_fifos(amd_trigger_inst.pio, amd_trigger_inst.sm);
+
+    pio_sm_put_blocking(amd_trigger_inst.pio, amd_trigger_inst.sm, UINT16_C(0x9b02));
+
+    while (true) {
+        uint32_t read = pio_sm_get_blocking(amd_trigger_inst.pio, amd_trigger_inst.sm);
+
+#ifdef DEBUG
+        printf("AMD trigger read 0x%04x\n", read);
+#else
+        callback();
+#endif
+    }
+
+    pio_sm_set_enabled(amd_trigger_inst.pio, amd_trigger_inst.sm, false);
+
+    return 0;
+}
+
+void amd_send(const uint8_t * data, const uint32_t count)
+{
+    pio_sm_put_blocking(amd_interposer_inst.pio, amd_interposer_inst.sm, count * 8 - 1);
+
+    for (size_t i = 0; i < (count + 3) / 4; i++) {
+         uint32_t word = 0;
+         word |= data[i * 4 + 0] << 24;
+         word |= data[i * 4 + 1] << 16;
+         word |= data[i * 4 + 2] << 8;
+         word |= data[i * 4 + 3];
+        pio_sm_put_blocking(amd_interposer_inst.pio, amd_interposer_inst.sm, word);
+    }
+
+    pio_sm_get_blocking(amd_interposer_inst.pio, amd_interposer_inst.sm);
+}
+%}
+
+
+;----------------------------------------------------------------------------------------------------------------------------------
+; Intel interposer part TODO: rename everything to make it easier to understand
+
 .program rpmc_sniffer
 
 ; SPI Sniffer
@@ -178,7 +374,6 @@ void deinit(struct pio_metadata * inst, const pio_program_t * prog)
     pio_remove_program(inst->pio, prog, inst->offset);
     pio_sm_unclaim(inst->pio, inst->sm);
 }
-
 
 static void rpmc_sniffer_cleanup() {
 
@@ -413,18 +608,17 @@ uint32_t interposer_send(const uint8_t * data, const uint32_t count)
         pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, word);
     }
 
+    uint32_t remaining = pio_sm_get_blocking(interposer_inst.pio, interposer_inst.sm);
+
 #if 0
     printf("after push\n");
     printf("tx empty: %d\n", pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
     printf("rx empty: %d\n", pio_sm_is_rx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
-#endif
-
-    uint32_t remaining;
-    remaining = pio_sm_get_blocking(interposer_inst.pio, interposer_inst.sm);
 
     if (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm)) {
         printf("Error: State machine FIFO should be empty\n");
     }
+#endif
 
     return remaining + 1;
 }

@@ -6,10 +6,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include "spi_sniff.pio.h"
 #include "rpmc_sniffer.pio.h"
 #include "psp_nvdata.h"
-
 
 #define PIN_N_MUX_EN 17
 bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
@@ -33,16 +31,9 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 #define PIN_PICO_BOARD_SPI_MISO_DQ1 5
 #define PIN_PICO_BOARD_SPI_CS 6
 
-
 #define HMAC_KEY_SIZE 32
 
-void error(const char * msg)
-{
-    while (true) {
-        puts(msg);
-        sleep_ms(500);
-    }
-}
+#define DEBUG
 
 inline uint32_t reverse(const uint32_t x)
 {
@@ -52,43 +43,28 @@ inline uint32_t reverse(const uint32_t x)
            ((x & UINT32_C(0xFF00'0000)) >> 24); 
 }
 
-static inline void __time_critical_func(interpose_no_push)()
+void interpose_amd(void)
 {
-    gpio_set_mask((1 << PIN_MUX_INTERPOSE));
+    const static uint8_t status[] = {0xff, 0x00,
+                                     0xff, 0x00,
+                                     0xff, 0xff, 0x80,
+                                     0xff, 0x00};
+    const static size_t status_length[] = {2, 2, 2, 3, 2};
+    
+    gpio_put(PIN_MUX_INTERPOSE, 1);
+    const uint8_t * status_pos = status;
+    
+    for (size_t counter = 0; counter < count_of(status_length); counter++) {
+        amd_send(status_pos, status_length[counter]);
+        status_pos += status_length[counter];
+    }
+
+    gpio_put(PIN_MUX_INTERPOSE, 0);
+
+#ifdef DEBUG
+    printf("interposed an increment\n");
+#endif
 }
-
-static inline void __time_critical_func(interpose)()
-{
-    interpose_no_push();
-    multicore_fifo_push_blocking(132);
-}
-
-static inline void __time_critical_func(stop_interpose)()
-{
-    gpio_clr_mask((1 << PIN_MUX_INTERPOSE));
-}
-
-// void __time_critical_func(rpmc_interpose_increment_core1)(void)
-// {
-//     const static uint8_t status[] = {0xff, // to finish the rpmc transmission
-//                                      0xff, 0x00,
-//                                      0xff, 0x00,
-//                                      0xff, 0xff, 0x80,
-//                                      0xff, 0x00};
-//     const static size_t status_length[] = {1, 2, 2, 3, 2};
-//     while (true) {
-//         multicore_fifo_pop_blocking();
-
-//         const uint8_t * status_pos = status;
-        
-//         for (size_t counter = 0; counter < count_of(status_length); counter++) {
-//             spi_write_blocking(OUTPUT_SPI, status_pos, status_length[counter]);
-//             status_pos += status_length[counter];
-//         }
-
-//         stop_interpose();
-//     }
-// }
 
 static uint32_t counter_values[4] = {1446, 1442, 0, 0};
 // Keys for key_data 01000000
@@ -147,13 +123,6 @@ const static uint32_t done_msg[13] = {[0 ... 12] = 0xffff80ff};
 static_assert(sizeof(wait_msg) % 4 == 0);
 static_assert(sizeof(done_msg) % 4 == 0);
 
-void mux_and_send(const uint8_t * msg, const size_t length)
-{
-    listen_for_op2_and_mux();
-    interposer_send(msg, length);
-    interposer_stop();
-}
-
 void interpose_intel()
 {
     struct rpmc_command_info info;
@@ -163,7 +132,9 @@ void interpose_intel()
     while (true) {
         listen_for_op1(&info);
 
-        //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
+        #ifdef DEBUG
+        printf("Received RPMC command %i\n", info.kind);
+        #endif
 
         if (info.kind == INCREMENT) {
             listen_for_op2_and_mux();
@@ -365,21 +336,17 @@ int main()
                       | (1 << PIN_PICO_BOARD_SPI_MISO_DQ1)
                       | (1 << PIN_PICO_BOARD_SPI_CS));
     
-    set_sys_clock_khz(160'000, true);
-    
     switch (getchar()) {
-        // interpose amd 
-        // case 'a':
-        //     gpio_put(PIN_N_MUX_EN, 0);
-        //     gpio_put(PIN_MUX_INTERPOSE, 0);
-        //     // initlialize spi trigger
-        //     spi_sniff_init(PIN_CHIP_SPI_CS, PIN_CHIP_SPI_CLK, PIN_CHIP_MASTER_SPI_RX);
-        //     init_spi1_interposer();
-        //     printf("Interposing AMD\n");
-
-        //     multicore_launch_core1(rpmc_interpose_increment_core1);
-        //     spi_trigger(UINT16_C(0x9b02), interpose);
-        //     break;
+        case 'a':
+            gpio_put(PIN_N_MUX_EN, 0);
+            gpio_put(PIN_MUX_INTERPOSE, 0);
+            amd_trigger_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
+            amd_interposer_init(PIN_PICO_OUT_SPI_CS, PIN_PICO_OUT_SPI_SCK, PIN_PICO_OUT_SPI_MISO_DQ1);
+            
+            printf("Interposing AMD\n");
+            
+            amd_trigger(interpose_amd);
+            break;
         case 'i':
             gpio_put(PIN_N_MUX_EN, 0);
             gpio_put(PIN_MUX_INTERPOSE, 0);
@@ -387,7 +354,6 @@ int main()
             interposer_pio_init(PIN_PICO_OUT_SPI_CS, PIN_PICO_OUT_SPI_SCK, PIN_PICO_OUT_SPI_MISO_DQ1);
             
             printf("Interposing Intel\n");
-            //multicore_launch_core1(interpose_intel_core1);
             interpose_intel();
             break;
         // case 'r':
