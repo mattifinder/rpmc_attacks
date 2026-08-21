@@ -363,7 +363,10 @@ static int listen_for_op1(struct rpmc_command_info * info) {
 }
 
 static int __time_critical_func(listen_for_op2_and_mux)() {
-    // TODO: init could be done only once
+    // TODO: init could be done only once.
+    //       EDIT: we actually have to do this for the `rpmc_sniffer_inst` to
+    //       reset the program counter and exit out of the sampleloop. for the
+    //       `pin_setter_sm` the disabling should be enough
     int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
