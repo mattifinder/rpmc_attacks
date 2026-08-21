@@ -14,7 +14,6 @@
 ; - JMPPIN is SPI CS (5)
 
 .define CLK 2
-.side_set 1 opt
 
 public start:
     ; load bits to match into y
@@ -57,7 +56,7 @@ sampleloop:
 
 public set_pins:
     irq wait 4
-    set PINS, 1 side 1
+    set PINS, 1
     jmp set_pins
 
 
