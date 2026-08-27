@@ -306,7 +306,6 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
 
     switch (cmd_byte) {
         case 0x00:
-            printf("write_root_key\n");
             info->kind = WRITE_ROOT_KEY;
             return;
         case 0x01:

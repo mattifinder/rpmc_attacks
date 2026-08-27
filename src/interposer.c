@@ -218,21 +218,19 @@ void __time_critical_func(interpose_intel)()
 
     while (true) {
         listen_for_op1(&info);
-        listen_for_op2_and_mux();
 
         //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
         if (info.kind == INCREMENT) {
-            // TODO
+            listen_for_op2_and_mux();
+
             const uint32_t *msg = done_update_msg + info.update.counter * 13;
             interposer_send_words(msg, 1);
             interposer_send_words(msg, 13);
             interposer_stop();
-            if (counter_values[info.increment.target] != info.increment.old_value)
-                putchar('f');
             counter_values[info.increment.target]++;
-            putchar('i');
         } else if (info.kind == GET) {
+            listen_for_op2_and_mux();
 
             interposer_send_words(wait_msg, 1);
 
@@ -256,9 +254,8 @@ void __time_critical_func(interpose_intel)()
             interposer_send((const uint8_t *)&info, size);
 
             interposer_stop();
-            putchar('g');
-
         } else if (info.kind == UPDATE_HMAC_KEY) {
+            listen_for_op2_and_mux();
             //interposer_send_words(wait_msg, 1);
 
 #if 0
@@ -294,10 +291,9 @@ void __time_critical_func(interpose_intel)()
 #endif
 
             interposer_stop();
-            putchar('u');
         } else {
             // write root key
-            interposer_stop();
+            //interposer_stop();
         }
     }
 }
