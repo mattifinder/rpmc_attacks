@@ -94,7 +94,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 }
 #endif
 
-static uint32_t counter_values[4] = {1678, 1669, 0, 0};
+static uint32_t counter_values[4] = {1829, 1814, 0, 0};
 // Keys for key_data 01000000
 #define USE_KEYS_FRAMEWORK_2
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
