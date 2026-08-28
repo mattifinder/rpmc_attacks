@@ -292,7 +292,7 @@ void __time_critical_func(interpose_intel)()
 
             interposer_stop();
         } else {
-            // write root key
+            // write root key or unknown
             //interposer_stop();
         }
     }
