@@ -15,50 +15,66 @@
 
 .define CLK 2
 
+.wrap_target
 public start:
     ; load bits to match into y
     out y, 32
 
 match:
-    set x, 7                ; bits to match (need to be 32)
+    set x, 15                ; bits to match (maximum of 32?)
     mov isr, null
 
     ; wait for falling chip select edge
-wait_cs:
     wait 1 JMPPIN
     wait 0 JMPPIN
 
-    ; sample the bits to match into x
+    ; sample the bits to match into x on every rising clock edge
 bitloop:
-    ; wait for rising clock edge
     wait 1 gpio CLK
     in pins, 1
     ; make sure that the clock goes down in between
     wait 0 gpio CLK
     jmp x--, bitloop
+bitloop_end:
 
     ; compare read bits
     mov x, isr              ; move bits read to x
     jmp x!=y, match         ; continue if bits don't match
-    ; notify the other state machine to enable the mux pin (if it is running)
-    irq clear 4
-    push
 
-    nop 
-    in pins, 1
-.wrap_target
-sampleloop:
-    nop     [1]
-    ; TODO: could this elevate the need of restarting the state machine?
-    ; maybe combined with a non blocking push?
-    ;jmp PIN match           ; break out of bitloop if cs is high
+    ; a request command is 48 bytes long, and we have read already the first
+    ; two, so we're still missing 46*8 bits. since we can't set immediate values
+    ; larger than 31, we have to use two counters for an outer loop and an inner
+    ; one. 46*8/16 = 23
+    ; NOTE: make sure the pico is fast enough for this (overclocking might be
+    ;       necessary)
+    set y, 22
+outerloop:
+    set x, 15
+innerloop:
     wait 1 gpio CLK
     in pins, 1
+    wait 0 gpio CLK
+    jmp x--, innerloop
+innerloop_end:
+    jmp y--, outerloop
+outerloop_end:
+
+    ; notify the second state machine that it can start looking for OP2
+    irq clear 4
+
+    ; wait for CS to go up again
+    wait 1 JMPPIN
+
+    irq clear 4
+
+    ; jump back to start
 .wrap
 
 public set_pins:
     irq wait 4
     set PINS, 1
+    irq wait 4
+    set PINS, 0
     jmp set_pins
 
 
@@ -234,6 +250,21 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
 
     sm_config_set_set_pins(&rpmc_sniffer_inst.cfg, mux, 1);
 
+    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+
+    rc = pio_sm_init(rpmc_sniffer_inst.pio, pin_setter_sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_set_pins, &rpmc_sniffer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, true);
+
     rpmc_sniffer_inited = true;
     // success
     return true;
@@ -334,27 +365,18 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
     }
 }
 
-static int listen_for_op1(struct rpmc_command_info * info) {
-    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
-    if (rc < 0) {
-        printf("Error: spi sniff sm failed to initialize!\n");
-        return rc;
-    }
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info) {
+    uint32_t request[12];
 
-    // tell the sample loop to look for the OP1 byte
-    pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9b);
+    pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
-#if 0
-    // NOTE: We don't have to wait here until the rx FIFO contains something,
-    // since parse_rpmc_command blocks anyways
-#else
-    //pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
-#endif
+    for (unsigned i = 0; i < count_of(request); ++i)
+        request[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
-    parse_rpmc_command(info);
+    for (unsigned i = 0; i < count_of(request); ++i)
+        printf("%x ", request[i]);
+    printf("\n");
 
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
     return 0;
 }
 

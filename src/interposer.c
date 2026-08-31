@@ -2,6 +2,7 @@
 #include <pico/binary_info.h>
 #include <pico/multicore.h>
 #include <hardware/spi.h>
+#include <hardware/clocks.h>
 #include <mbedtls/md.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -216,6 +217,8 @@ void __time_critical_func(interpose_intel)()
     info.dummy[0] = 0xFF; // done_msg[0];
     info.dummy[1] = 0xFF; // done_msg[1];
 
+    set_sys_clock_khz(250000, true);
+
     /*
      * Intel strategy: let all OP1s pass, but fake the OP2 responses for request
      * commands. (update_hmac_key may go through and increments are only
@@ -223,6 +226,7 @@ void __time_critical_func(interpose_intel)()
      */
     while (true) {
         listen_for_op1(&info);
+        continue;
 
         //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
