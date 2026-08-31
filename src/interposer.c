@@ -520,7 +520,7 @@ int main()
             gpio_put(PIN_N_MUX_EN, 0);
             gpio_put(PIN_MUX_INTERPOSE, 0);
             rpmc_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_MUX_INTERPOSE);
-            interposer_pio_init(PIN_PICO_OUT_SPI_CS, PIN_PICO_OUT_SPI_SCK, PIN_PICO_OUT_SPI_MISO_DQ1);
+            interposer_pio_init(PIN_PICO_OUT_SPI_CS, PIN_PICO_OUT_SPI_SCK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_OUT_SPI_MISO_DQ1, PIN_MUX_INTERPOSE);
             
             printf("Interposing Intel\n");
             //multicore_launch_core1(interpose_intel_core1);

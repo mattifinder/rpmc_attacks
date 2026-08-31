@@ -60,32 +60,37 @@ innerloop_end:
 outerloop_end:
 
     ; notify the second state machine that it can start looking for OP2
-    irq clear 4
+    irq prev clear 4
 
     ; wait for CS to go up again
     wait 1 JMPPIN
 
-    irq clear 4
+    irq prev clear 4
 
     ; jump back to start
 .wrap
-
-public set_pins:
-    irq wait 4
-    set PINS, 1
-    irq wait 4
-    set PINS, 0
-    jmp set_pins
-
 
 ;-------------------------------------------------------------------------------------------------------------------------;
 
 .program spi_slave
 ; TODO: try PIN_PICO_BOARD_SPI_CLK (2)
 .define CLK 13
+.side_set 1 opt
 
 .wrap_target
 public start:
+    nop side 1
+    nop
+    nop side 0
+
+loop2:
+    irq wait 4
+    nop            side 1
+    irq wait 4
+    nop            side 0
+    jmp loop2
+
+
     ; here we wait for chip select to go low
     ; while we wait miso should be high!
     set pins, 1
@@ -211,16 +216,13 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
 
     rpmc_sniffer_cleanup();
 
+    // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
+    //       for irq prev/next
     if (!pio_claim_free_sm_and_add_program(&rpmc_sniffer_program, &rpmc_sniffer_inst.pio, &rpmc_sniffer_inst.sm, &rpmc_sniffer_inst.offset)) {
         printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
         return false;
     }
-
-    pin_setter_sm = pio_claim_unused_sm(rpmc_sniffer_inst.pio, false);
-    if (pin_setter_sm < 0) {
-        printf("Error: could not claim free sm");
-        return false;
-    }
+    printf("rpmc_sniffer: %u\n", PIO_NUM(rpmc_sniffer_inst.pio));
 
     pio_gpio_init(rpmc_sniffer_inst.pio, clk);
     gpio_set_input_hysteresis_enabled(clk, false);
@@ -255,39 +257,45 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
         printf("Error: spi sniff sm failed to initialize!\n");
         return rc;
     }
-
-    rc = pio_sm_init(rpmc_sniffer_inst.pio, pin_setter_sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_set_pins, &rpmc_sniffer_inst.cfg);
-    if (rc < 0) {
-        printf("Error: spi sniff sm failed to initialize!\n");
-        return rc;
-    }
-
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, true);
 
     rpmc_sniffer_inited = true;
     // success
     return true;
 }
 
-bool interposer_pio_init(unsigned int cs, unsigned int clk, unsigned miso)
+bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int mosi, unsigned miso, const unsigned int mux)
 {
+    // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
+    //       for irq prev/next
     if (!pio_claim_free_sm_and_add_program(&spi_slave_program, &interposer_inst.pio, &interposer_inst.sm, &interposer_inst.offset)) {
         printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
         return false;
     }
+    printf("interposer_pio: %u\n", PIO_NUM(interposer_inst.pio));
     pio_gpio_init(interposer_inst.pio, clk);
+    gpio_set_input_hysteresis_enabled(clk, false);
     pio_gpio_init(interposer_inst.pio, cs);
+    pio_gpio_init(interposer_inst.pio, mosi);
+    gpio_set_input_hysteresis_enabled(mosi, false);
     pio_gpio_init(interposer_inst.pio, miso);
     // gpio_set_slew_rate(miso, GPIO_SLEW_RATE_FAST);
     // gpio_set_drive_strength(miso, GPIO_DRIVE_STRENGTH_12MA);
 
+    pio_gpio_init(interposer_inst.pio, mux);
+    pio_sm_set_sideset_pins(interposer_inst.pio, interposer_inst.sm, mux);
+
     interposer_inst.cfg = spi_slave_program_get_default_config(interposer_inst.offset);
 
     // io mapping (inputs 0:svd)
+    sm_config_set_in_pins(&interposer_inst.cfg, mosi);
+    sm_config_set_in_pin_count(&interposer_inst.cfg, 1);
     sm_config_set_out_pins(&interposer_inst.cfg, miso, 1);
     sm_config_set_set_pins(&interposer_inst.cfg, miso, 1);
+    //pio_sm_set_pindirs_with_mask(interposer_inst.pio, interposer_inst.sm, 1, (1 << miso) | (1 << mux));
+    pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, mux, 1, true);
     pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, miso, 1, true);
+    sm_config_set_sideset_pin_base(&interposer_inst.cfg, mux);
 
     sm_config_set_in_shift(&interposer_inst.cfg, false, true, 32);
     sm_config_set_out_shift(&interposer_inst.cfg, false, true, 32);
@@ -381,28 +389,8 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
 }
 
 static int __time_critical_func(listen_for_op2_and_mux)() {
-    // TODO: init could be done only once.
-    //       EDIT: we actually have to do this for the `rpmc_sniffer_inst` to
-    //       reset the program counter and exit out of the sampleloop. for the
-    //       `pin_setter_sm` the disabling should be enough
-    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
-    if (rc < 0) {
-        printf("Error: spi sniff sm failed to initialize!\n");
-        return rc;
-    }
-
-    rc = pio_sm_init(rpmc_sniffer_inst.pio, pin_setter_sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_set_pins, &rpmc_sniffer_inst.cfg);
-    if (rc < 0) {
-        printf("Error: spi sniff sm failed to initialize!\n");
-        return rc;
-    }
-
-    // TODO: rewrite comment
-    // enable the two state machines. the first looks for the match byte and
-    // sends an irq to the second which then enables the mux pin
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, true);
-
+    // clear fifo
+    pio_sm_clear_fifos(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
     // set match byte to op2
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x96);
 
@@ -410,9 +398,6 @@ static int __time_critical_func(listen_for_op2_and_mux)() {
     while (pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm))
         tight_loop_contents();
 
-    // disable the state machines again
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, false);
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, pin_setter_sm, false);
     return 0;
 }
 
