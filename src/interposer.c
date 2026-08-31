@@ -216,18 +216,17 @@ void __time_critical_func(interpose_intel)()
     info.dummy[0] = 0xFF; // done_msg[0];
     info.dummy[1] = 0xFF; // done_msg[1];
 
+    /*
+     * Intel strategy: let all OP1s pass, but fake the OP2 responses for request
+     * commands. (update_hmac_key may go through and increments are only
+     * optional since we spoof requests anyways)
+     */
     while (true) {
         listen_for_op1(&info);
 
         //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
         if (info.kind == INCREMENT) {
-            listen_for_op2_and_mux();
-
-            const uint32_t *msg = done_update_msg + info.update.counter * 13;
-            interposer_send_words(msg, 1);
-            interposer_send_words(msg, 13);
-            interposer_stop();
             counter_values[info.increment.target]++;
         } else if (info.kind == GET) {
             listen_for_op2_and_mux();
