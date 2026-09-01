@@ -73,14 +73,11 @@ outerloop_end:
 .side_set 1 opt
 
 public start:
-    ; set miso to 0xFF by default
-    set pins, 1
-
     ; load bits to match into y
     out y, 32
 
 .wrap_target
-wait_for_op1:
+wait_for_request:
     ; wait for the first SM to notify us about a found request command
     irq wait 4
 
@@ -109,11 +106,28 @@ match_success:
     ; start muxing
     nop side 1
 
-    ; wait for CS to go up again
-    wait 1 JMPPIN
+    ; get the bit count (should be one less than actual)
+    out x, 32
 
-    ; stop muxing
-    nop side 0
+write_loop:
+    ; write bit to miso
+    wait 0 gpio CLK
+    out pins, 1
+    wait 1 gpio CLK
+
+    jmp x--, write_loop
+write_loop_end:
+    ; set miso to 0xFF and stop muxing
+    set pins, 1      side 0
+
+    ; wait for CS to go up again
+    ;wait 1 JMPPIN
+
+    ; since we can only push words into the fifo, there might still be some bits
+    ; left that have to be cleared
+    mov OSR, NULL
+
+    ; jump back to wait_for_request
 .wrap
 
 ;-------------------------------------------------------------------------------------------------------------------------;
@@ -366,21 +380,27 @@ union rpmc_request {
     uint8_t buf[48];
 };
 
+#define PIN_MUX_INTERPOSE 16
 static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info) {
     union rpmc_request req;
 
+    // tell the first SM to match RPMC request commands
+    pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
     // tell the second SM to match OP2
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x96);
     for (unsigned n = 1; ; ++n) {
-        // tell the first SM to match RPMC request commands
+        for (unsigned i = 0; i < count_of(req.words); ++i)
+            req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+
+        // tell the first SM again to match RPMC request commands
         //
         // NOTE: we have to push this for every new request, because the PIO
         //   needs to use both of its scratch registers and thus overwrites the
         //   match bits (and it can't set immediate values larger than 31)
         pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
-        for (unsigned i = 0; i < count_of(req.words); ++i)
-            req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 7);
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0xAAAAAAAA);
 
 #if 0
         u32_into_u8(&req.buf[1], req.tag, sizeof(req.tag));
@@ -390,12 +410,13 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
 #endif
 
 #if 1
-        printf("request %d:\n", n);
-        printf("\top1: %02x\n", req.op1);
-        printf("\ttyp: %02x\n", req.typ);
-        printf("\tidx: %02x\n", req.idx);
-        printf("\ttag: %02x%02x...%02x%02x\n", req.tag[0], req.tag[1], req.tag[10], req.tag[11]);
-        printf("\tsig: %02x%02x...%02x%02x\n", req.sig[0], req.sig[1], req.sig[30], req.sig[31]);
+        printf("request %d:\n"
+               "\tidx: %02x\n"
+               "\ttag: %02x%02x...%02x%02x\n",
+               n, req.idx, req.tag[0], req.tag[1], req.tag[10], req.tag[11]);
+        //printf("\top1: %02x\n", req.op1);
+        //printf("\ttyp: %02x\n", req.typ);
+        //printf("\tsig: %02x%02x...%02x%02x\n", req.sig[0], req.sig[1], req.sig[30], req.sig[31]);
 #endif
     }
 
