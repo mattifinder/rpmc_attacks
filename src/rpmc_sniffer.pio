@@ -131,9 +131,9 @@ write_loop_end:
     ; wait for CS to go up again
     ;wait 1 JMPPIN
 
-    ; since we can only push words into the fifo, there might still be some bits
-    ; left that have to be cleared
-    mov OSR, NULL
+    ; since we can only push words into the fifo, there might still be some
+    ; dummy bits left that have to be cleared
+    out NULL, 32
 
     ; jump back to wait_for_request
 .wrap
