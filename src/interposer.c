@@ -20,7 +20,7 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 #define PIN_CHIP_VOLT_SEL 23
 #define PIN_CHIP_VOLT_MODE 24
 
-// pico -> board
+// through multiplexer
 #define PIN_PICO_OUT_SPI_MOSI_DQ0 12
 #define PIN_PICO_OUT_SPI_SCK 13
 #define PIN_PICO_OUT_SPI_DQ2 14
@@ -28,7 +28,7 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 #define PIN_PICO_OUT_SPI_DQ3 21
 #define PIN_PICO_OUT_SPI_MISO_DQ1 22
 
-// board -> pico
+// directly connected
 #define PIN_PICO_BOARD_SPI_MOSI_DQ0 1
 #define PIN_PICO_BOARD_SPI_CLK 2
 #define PIN_PICO_BOARD_SPI_HOLD_DQ3 3

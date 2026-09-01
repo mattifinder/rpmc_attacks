@@ -73,8 +73,7 @@ outerloop_end:
 ;-------------------------------------------------------------------------------------------------------------------------;
 
 .program spi_slave
-; TODO: try PIN_PICO_BOARD_SPI_CLK (2)
-.define CLK 13
+.define CLK 2
 .side_set 1 opt
 
 .wrap_target
