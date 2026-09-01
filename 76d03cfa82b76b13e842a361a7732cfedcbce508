@@ -1,0 +1,20 @@
+We do miss some of the requests now:
+
+	rpmc_sniffer: 2
+	interposer_pio: 1
+	Interposing Intel
+	request 1:
+		idx: 00
+		tag: 093b...3a00
+	request 2:
+		idx: 01
+		tag: f00a...f24f
+	request 3:
+		idx: 00
+		tag: 75c2...6bf2
+	request 4:
+		idx: 01
+		tag: 6555...960e
+	request 5:
+		idx: 00
+		tag: cb61...1ced
