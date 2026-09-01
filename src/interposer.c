@@ -518,6 +518,10 @@ int main()
             break;
         case 'i':
             gpio_put(PIN_N_MUX_EN, 0);
+            // toggle the mux pin once so that we can see that the pcbite sits
+            // correctly
+            gpio_put(PIN_MUX_INTERPOSE, 0);
+            gpio_put(PIN_MUX_INTERPOSE, 1);
             gpio_put(PIN_MUX_INTERPOSE, 0);
 
             // TODO: configure the TPS2116DRL. powering the flash chip with the
