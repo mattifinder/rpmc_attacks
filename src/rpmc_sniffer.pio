@@ -103,11 +103,8 @@ bitloop_end:
     jmp x!=y, match_loop    ; continue if bits don't match
 
 match_success:
-    ; start muxing
-    nop side 1
-
-    ; get the bit count (should be one less than actual)
-    out x, 32
+    ; get the bit count (should be one less than actual) and start muxing
+    out x, 32       side 1
 
 write_loop:
     ; write bit to miso
