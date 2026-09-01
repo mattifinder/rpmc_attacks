@@ -288,7 +288,6 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int m
         return rc;
     }
     pio_sm_set_enabled(interposer_inst.pio, interposer_inst.sm, true);
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x96);
 
     interposer_inited = true;
 }
@@ -300,16 +299,20 @@ inline void reverse_inplace(uint32_t *x)
 
 static void u32_into_u8(uint32_t *u32, uint8_t *u8, size_t count)
 {
-    size_t i = 0;
+    size_t i;
+    uint32_t word;
+
     for (i = 0; i < (count / 4); ++i) {
-        u8[i * 4 + 0] = (u32[i] >> 24) & 0xFF;
-        u8[i * 4 + 1] = (u32[i] >> 16) & 0xFF;
-        u8[i * 4 + 2] = (u32[i] >>  8) & 0xFF;
-        u8[i * 4 + 3] = (u32[i]      ) & 0xFF;
+        word = u32[i];
+        u8[i * 4 + 0] = (word >> 24) & 0xFF;
+        u8[i * 4 + 1] = (word >> 16) & 0xFF;
+        u8[i * 4 + 2] = (word >>  8) & 0xFF;
+        u8[i * 4 + 3] = (word      ) & 0xFF;
     }
 
+    word = u32[i];
     for (size_t j = 0; j < (count % 4); ++j)
-        u8[i * 4 + j] = (u32[i] >> (24 - 8 * j)) & 0xFF;
+        u8[i * 4 + j] = (word >> (24 - 8 * j)) & 0xFF;
 }
 
 static void parse_rpmc_command(struct rpmc_command_info * info)
@@ -350,17 +353,51 @@ static void parse_rpmc_command(struct rpmc_command_info * info)
     }
 }
 
+union rpmc_request {
+    struct __attribute((__packed__)) {
+        uint8_t op1;
+        uint8_t typ;
+        uint8_t idx;
+        uint8_t reserved;
+        uint8_t tag[12];
+        uint8_t sig[32];
+    };
+    uint32_t words[12];
+    uint8_t buf[48];
+};
+
 static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info) {
-    uint32_t request[12];
+    union rpmc_request req;
 
-    pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
+    // tell the second SM to match OP2
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x96);
+    for (unsigned n = 1; ; ++n) {
+        // tell the first SM to match RPMC request commands
+        //
+        // NOTE: we have to push this for every new request, because the PIO
+        //   needs to use both of its scratch registers and thus overwrites the
+        //   match bits (and it can't set immediate values larger than 31)
+        pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
-    for (unsigned i = 0; i < count_of(request); ++i)
-        request[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+        for (unsigned i = 0; i < count_of(req.words); ++i)
+            req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
-    for (unsigned i = 0; i < count_of(request); ++i)
-        printf("%x ", request[i]);
-    printf("\n");
+#if 0
+        u32_into_u8(&req.buf[1], req.tag, sizeof(req.tag));
+#else
+        // TODO: it might be enough to only do this with the tag
+        u32_into_u8(req.words, req.buf, sizeof(req.buf));
+#endif
+
+#if 1
+        printf("request %d:\n", n);
+        printf("\top1: %02x\n", req.op1);
+        printf("\ttyp: %02x\n", req.typ);
+        printf("\tidx: %02x\n", req.idx);
+        printf("\ttag: %02x%02x...%02x%02x\n", req.tag[0], req.tag[1], req.tag[10], req.tag[11]);
+        printf("\tsig: %02x%02x...%02x%02x\n", req.sig[0], req.sig[1], req.sig[30], req.sig[31]);
+#endif
+    }
 
     return 0;
 }
