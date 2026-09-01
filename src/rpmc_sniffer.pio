@@ -118,13 +118,13 @@ match_success:
     out x, 32       side 1
 
 write_loop:
-    ; write bit to miso
+    ; write bit to miso before a rising clock edge
+    wait 1 gpio CLK
     wait 0 gpio CLK
     out pins, 1
-    wait 1 gpio CLK
-
     jmp x--, write_loop
 write_loop_end:
+
     ; set miso to 0xFF and stop muxing
     set pins, 1      side 0
 
