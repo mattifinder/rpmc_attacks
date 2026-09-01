@@ -133,6 +133,8 @@ write_loop_end:
 
     ; since we can only push words into the fifo, there might still be some
     ; dummy bits left that have to be cleared
+    ; TODO: I think we're clearing one word too much if the bit count was
+    ;       divisable by 32.
     out NULL, 32
 
     ; jump back to wait_for_request
