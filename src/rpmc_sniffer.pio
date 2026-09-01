@@ -40,8 +40,8 @@ bitloop_end:
     ; compare read bits
     mov x, isr              ; move bits read to x
     jmp x!=y, match_loop    ; continue if bits don't match
-
 match_success:
+
     ; a request command is 48 bytes long, and we have read already the first
     ; two, so we're still missing 46*8 bits. since we can't set immediate values
     ; larger than 31, we have to use two counters for an outer loop and an inner
