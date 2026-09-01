@@ -287,7 +287,11 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int m
     pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, miso, 1, true);
     sm_config_set_sideset_pin_base(&interposer_inst.cfg, mux);
 
-    sm_config_set_in_shift(&interposer_inst.cfg, false, true, 32);
+    // no RX fifo -> double TX fifo
+    sm_config_set_fifo_join(&interposer_inst.cfg, PIO_FIFO_JOIN_TX);
+    // shift left, no autopush and threshold of 32
+    sm_config_set_in_shift(&interposer_inst.cfg, false, false, 32);
+    // shift left, autopull and threshold of 32
     sm_config_set_out_shift(&interposer_inst.cfg, false, true, 32);
 
     // setup cs as jump pins
