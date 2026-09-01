@@ -76,12 +76,23 @@ public start:
     ; load bits to match into y
     out y, 32
 
+; TODO this should be moved to match_loop once everything works
 .wrap_target
 wait_for_request:
     ; wait for the first SM to notify us about a found request command
     irq wait 4
 
 match_loop:
+    ; peak at the bit count and abort if it is zero.
+    ; get 31 bits so that the pull threshold is not yet met. since we shift out
+    ; right, we're missing the LSB of the bit count, which is then cleared by
+    ; the mov operation. the bit count thus has to be shifted once to the left
+    ; before pushing it into the FIFO
+    out x, 31
+    jmp !x abort
+    ; write back into OSR for later (this also dicards the LSB)
+    mov osr, x
+
     set x, 7                ; bits to match
     mov isr, null
 
@@ -126,6 +137,11 @@ write_loop_end:
 
     ; jump back to wait_for_request
 .wrap
+
+abort:
+    ; clear the last bit of the OSR
+    out null, 1
+    jmp wait_for_request
 
 ;-------------------------------------------------------------------------------------------------------------------------;
 
@@ -400,7 +416,7 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
         //   match bits (and it can't set immediate values larger than 31)
         pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 7);
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1) << 1);
         pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0xAAAAAAAA);
 
 #if 0
