@@ -73,6 +73,13 @@ outerloop_end:
 .side_set 1 opt
 
 public start:
+    nop side 1
+    set pins, 0 [1]
+    set pins, 1 [1]
+    set pins, 0 [1]
+    set pins, 1 [1]
+    nop side 0
+
     ; load bits to match into y
     out y, 32
 
@@ -117,11 +124,10 @@ match_success:
     ; get the bit count (should be one less than actual) and start muxing
     out x, 32       side 1
 
+
 write_loop:
-    ; write bit to miso before a rising clock edge
-    wait 1 gpio CLK
-    wait 0 gpio CLK
-    out pins, 1
+    set pins, 0 [1]
+    set pins, 1 [1]
     jmp x--, write_loop
 write_loop_end:
 
@@ -418,7 +424,7 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
         pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
         pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1) << 1);
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x00000000);
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x40000000);
 
         // TODO: put a short busy status, do the u32_into_u8 and calculate the
         // long status, put a short done status, put the long status
