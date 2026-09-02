@@ -399,7 +399,6 @@ union rpmc_request {
     uint8_t buf[48];
 };
 
-#define PIN_MUX_INTERPOSE 16
 static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info) {
     union rpmc_request req;
 
@@ -419,7 +418,10 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
         pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
         pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1) << 1);
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0xAAAAAAAA);
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x00000000);
+
+        // TODO: put a short busy status, do the u32_into_u8 and calculate the
+        // long status, put a short done status, put the long status
 
 #if 0
         u32_into_u8(&req.buf[1], req.tag, sizeof(req.tag));
