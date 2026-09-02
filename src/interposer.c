@@ -217,7 +217,7 @@ void __time_critical_func(interpose_intel)()
     info.dummy[0] = 0xFF; // done_msg[0];
     info.dummy[1] = 0xFF; // done_msg[1];
 
-    set_sys_clock_khz(250000, true);
+    set_sys_clock_khz(50000, true);
 
     /*
      * Intel strategy: let all OP1s pass, but fake the OP2 responses for request
@@ -473,14 +473,14 @@ void init_spi1_interposer()
 int main()
 {
     stdio_init_all();
+
+    sleep_ms(1000);
     // TODO: write loop um die flash region zu overwriten
 
     // init mux
-    gpio_init_mask64((1 << PIN_N_MUX_EN) | (1 << PIN_MUX_INTERPOSE));
+    gpio_init_mask64((1 << PIN_MUX_INTERPOSE));
     gpio_set_slew_rate(PIN_MUX_INTERPOSE, GPIO_SLEW_RATE_FAST);
-    gpio_set_dir_in_masked64((1 << PIN_N_MUX_EN));
     gpio_set_dir_out_masked64((1 << PIN_MUX_INTERPOSE));
-    //gpio_put(PIN_N_MUX_EN, 1); // mux is active low
 
     // initialize voltage switcher
     gpio_init_mask64((1 << PIN_CHIP_VOLT_MODE) | (1 << PIN_CHIP_VOLT_SEL));
@@ -501,13 +501,17 @@ int main()
                       | (1 << PIN_PICO_BOARD_SPI_HOLD_DQ3)
                       | (1 << PIN_PICO_BOARD_SPI_WP_DQ2)
                       | (1 << PIN_PICO_BOARD_SPI_MISO_DQ1)
+                      //| (1 << PIN_PICO_OUT_SPI_MISO_DQ1)
                       | (1 << PIN_PICO_BOARD_SPI_CS));
 
+    gpio_set_dir(PIN_PICO_OUT_SPI_MISO_DQ1, true);
     gpio_set_slew_rate(PIN_PICO_OUT_SPI_MISO_DQ1, GPIO_SLEW_RATE_FAST);
     //gpio_set_slew_rate(PIN_PICO_BOARD_SPI_MISO_DQ1, GPIO_SLEW_RATE_FAST);
-    //gpio_set_drive_strength(PIN_PICO_OUT_SPI_MISO_DQ1, GPIO_DRIVE_STRENGTH_12MA);
+    //gpio_set_drive_strength(PIN_PICO_OUT_SPI_MISO_DQ1, GPIO_DRIVE_STRENGTH_2MA);
+    gpio_disable_pulls(PIN_PICO_BOARD_SPI_MISO_DQ1);
+    //gpio_disable_pulls(PIN_PICO_OUT_SPI_MISO_DQ1);
     //gpio_set_drive_strength(PIN_PICO_BOARD_SPI_MISO_DQ1, GPIO_DRIVE_STRENGTH_12MA);
-    gpio_set_dir_out_masked64((1 << PIN_PICO_OUT_SPI_MISO_DQ1));
+    //gpio_set_dir_out_masked64((1 << PIN_PICO_OUT_SPI_MISO_DQ1));
     
     switch (getchar()) {
         // interpose amd 
@@ -530,6 +534,8 @@ int main()
 
             // toggle the mux pin once so that we can see that the pcbite sits
             // correctly
+#if 1
+            //set_sys_clock_khz(50000, true);
             gpio_put(PIN_MUX_INTERPOSE, 0);
 #if 0
             for (unsigned i = 0; i < 10; ++i) {
@@ -538,24 +544,43 @@ int main()
             }
 #endif
 
-            for (unsigned i = 0; i < 10; ++i) {
+            //gpio_set_dir(PIN_PICO_BOARD_SPI_MISO_DQ1, true);
+            //gpio_set_dir(PIN_PICO_OUT_SPI_MISO_DQ1, true);
+            gpio_put(PIN_MUX_INTERPOSE, 1);
+            sleep_us(100);
+            for (unsigned i = 0; i < 30; ++i) {
 #if 1
-                gpio_put(PIN_MUX_INTERPOSE, 1);
                 //gpio_put(PIN_N_MUX_EN, 0);
+                //gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 1);
                 gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+                //gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 0);
                 gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
                 gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-                //gpio_put(PIN_N_MUX_EN, 1);
-                gpio_put(PIN_MUX_INTERPOSE, 0);
-#endif
+                //gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 1);
                 gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+                //gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 0);
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
                 gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
 #if 0
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
+#endif
+                //gpio_put(PIN_N_MUX_EN, 1);
+#endif
+#if 0
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
                 gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 1);
                 gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 0);
 #endif
             }
+            //gpio_set_dir(PIN_PICO_BOARD_SPI_MISO_DQ1, false);
+            //gpio_set_dir(PIN_PICO_OUT_SPI_MISO_DQ1, false);
+#endif
 
             // TODO: configure the TPS2116DRL. powering the flash chip with the
             //       1.8V from the pico might make attacks faster but also means
