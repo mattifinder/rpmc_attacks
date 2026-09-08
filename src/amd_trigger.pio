@@ -1,0 +1,124 @@
+.program amd_trigger
+
+; SPI Sniffer
+; When triggered, by a 32-bit value BITCOUNT in the TX fifo, this program
+; will wait for CS to go low and then sniff the next BITCOUNT bits from
+; MOSI. These are pushed to the RX fifo as multiples of 32-bits.
+;
+; FIFOs:
+; - TX holds 32-bit BITCOUNT values (autopull is enabled).
+; - RX transfers the sniffed bits (in 32-bit chunks) (autopush is enabled).
+; Pin mapping:
+; - in pins: 0 is SPI MOSI (gpio 3)
+; - uses gpio pins 2 (SPI CLK)
+; - JMPPIN is SPI CS (5)
+
+.define CLK 2
+
+public start:
+    ; load bits to match into y
+    out y, 32
+
+.wrap_target
+match:
+    set x, 15               ; bits to match (need to be 32)
+    mov isr, null
+
+    ; wait for falling chip select edge
+wait_cs:
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+
+    ; sample the bits to match into x
+bitloop:
+    ; wait for rising clock edge
+    wait 0 gpio CLK
+    wait 1 gpio CLK
+    in pins, 1
+    jmp PIN match           ; break out of bitloop if cs is high
+    jmp x--, bitloop
+
+    ; compare read bits
+    mov x, isr              ; move bits read to x
+    jmp x!=y, match         ; continue if bits don't match
+
+end:
+    push                    ; push a null byte if we matched!
+.wrap
+
+% c-sdk {
+static bool amd_trigger_inited = false;
+static PIO amd_trigger_pio;
+static uint amd_trigger_sm;
+static uint amd_trigger_offset;
+static pio_sm_config amd_trigger_cfg;
+
+static void amd_trigger_cleanup() {
+
+    if (!amd_trigger_inited)
+        return;
+
+    pio_sm_set_enabled(amd_trigger_pio, amd_trigger_sm, false);
+    pio_remove_program(amd_trigger_pio, &amd_trigger_program, amd_trigger_offset);
+    pio_sm_unclaim(amd_trigger_pio, amd_trigger_sm);
+
+    amd_trigger_inited = false;
+}
+
+static int amd_trigger_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
+
+    amd_trigger_cleanup();
+
+    if (!pio_claim_free_sm_and_add_program(&amd_trigger_program, &amd_trigger_pio, &amd_trigger_sm, &amd_trigger_offset)) {
+        printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
+        return false;
+    }
+
+    pio_gpio_init(amd_trigger_pio, clk);
+    pio_gpio_init(amd_trigger_pio, mosi);
+    pio_gpio_init(amd_trigger_pio, cs);
+
+    amd_trigger_cfg = amd_trigger_program_get_default_config(amd_trigger_offset);
+
+    // io mapping (inputs 0:svd)
+    sm_config_set_in_pins(&amd_trigger_cfg, mosi);
+    sm_config_set_in_pin_count(&amd_trigger_cfg, 1);
+
+    // shifts are msb-first 32-bits
+    sm_config_set_in_shift(&amd_trigger_cfg, false, true, 32);
+    sm_config_set_out_shift(&amd_trigger_cfg, false, true, 32);
+
+    // setup cs as jump pins
+    sm_config_set_jmp_pin(&amd_trigger_cfg, cs);
+
+    // 125 MHz
+    sm_config_set_clkdiv(&amd_trigger_cfg, 1.0f);
+
+    amd_trigger_inited = true;
+
+    // success
+    return true;
+}
+
+static int amd_trigger(void (*callback)(void)) {
+    int rc = pio_sm_init(amd_trigger_pio, amd_trigger_sm, amd_trigger_offset + amd_trigger_offset_start, &amd_trigger_cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(amd_trigger_pio, amd_trigger_sm, true);
+    pio_sm_clear_fifos(amd_trigger_pio, amd_trigger_sm);
+
+    pio_sm_put_blocking(amd_trigger_pio, amd_trigger_sm, UINT16_C(0x9b02));
+
+    while (true) {
+        uint32_t read = pio_sm_get_blocking(amd_trigger_pio, amd_trigger_sm);
+        callback();
+    }
+
+    pio_sm_set_enabled(amd_trigger_pio, amd_trigger_sm, false);
+
+    return 0;
+}
+
+%}
