@@ -16,10 +16,23 @@
 
 .define CLK 2
 
-.wrap_target
 public start:
+    ; because we move the bits back into osr after consuming them, we get away
+    ; with doing this only once
+    pull
+
+.wrap_target
+listen_for_match_bits:
     ; load bits to match into y
     out y, 32
+
+    ; Since we will have to overwrite register Y later to store something else
+    ; we will loose the match bits. But since we need the match bits in every
+    ; iteration we would have to either pull them again from the FIFO (requiring
+    ; the C code to put them there every iteration) or we can place them back
+    ; into OSR ourselves. This works because we don't have to pull any other
+    ; bits from the FIFO.
+    mov osr, y
 
 match_loop:
     set x, 15                ; number of bits to match
@@ -65,7 +78,7 @@ outerloop_end:
     ; notify the second state machine that it can start looking for OP2
     irq prev clear 4
 
-    ; jump back to start
+    ; jump back to listen_for_match_bits
 .wrap
 
 ;-------------------------------------------------------------------------------------------------------------------------;
@@ -256,9 +269,9 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     sm_config_set_in_pins(&rpmc_sniffer_inst.cfg, mosi);
     sm_config_set_in_pin_count(&rpmc_sniffer_inst.cfg, 1);
 
-    // shifts are msb-first 32-bits, enable autopush and autopull
+    // shifts are msb-first 32-bits, enable autopush but disable autopull
     sm_config_set_in_shift(&rpmc_sniffer_inst.cfg, false, true, 32);
-    sm_config_set_out_shift(&rpmc_sniffer_inst.cfg, false, true, 32);
+    sm_config_set_out_shift(&rpmc_sniffer_inst.cfg, false, false, 32);
 
     // setup cs as jump pins
     sm_config_set_jmp_pin(&rpmc_sniffer_inst.cfg, cs);
@@ -419,13 +432,6 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
     for (unsigned n = 1; ; ++n) {
         for (unsigned i = 0; i < count_of(req.words); ++i)
             req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
-
-        // tell the first SM again to match RPMC request commands
-        //
-        // NOTE: we have to push this for every new request, because the PIO
-        //   needs to use both of its scratch registers and thus overwrites the
-        //   match bits (and it can't set immediate values larger than 31)
-        pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
         pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1) << 1);
         //pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4c000000);
