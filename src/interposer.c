@@ -238,7 +238,7 @@ void init_spi1_interposer()
     spi_init(OUTPUT_SPI, 25 * 1000 * 1000);
     spi_set_slave(OUTPUT_SPI, true);
     // The spi set format function seems not work as specified in the documentation
-    spi_set_format(OUTPUT_SPI, 24, 0, 1, 1);
+    spi_set_format(OUTPUT_SPI, 8, SPI_MSB_FIRST, SPI_CPHA_1, 1);
 
     gpio_set_function(PIN_PICO_BOARD_SPI_CLK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_PICO_BOARD_SPI_CS, GPIO_FUNC_SPI);
