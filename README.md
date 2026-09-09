@@ -2,7 +2,7 @@
 
 This repository contains code useful for attacking RPMC-capable SPI flash chips.
 
-It enables the use of different glitches on a target flash chip and exploiting controller vulnerabilite.
+It enables the use of different glitches on a target flash chip and exploiting controller vulnerabilities.
 These consist of overflowing a counter, some voltage glitching attacks to leak hmac keys, and a full interposer for amd and intel.
 
 Projects are tested on the **pico 2 W**.
@@ -10,25 +10,45 @@ Projects are tested on the **pico 2 W**.
 The `pocs` directory contains the python scripts we used to test some of our attacks.
 The `kvm_scripts` directory contains the scripts we used on for our nano kvm to film the demo video and test the full end-to-end pin brute force.
 `src` houses the firmware code for the pico, better explained in the next section.
-The `interposer-pdb` directory contains the kicad project for the interposer pcb.
+The `interposer-pcb` directory contains the kicad project for the interposer pcb.
 
 ## Subprojects
 
-### overflow
+Build all subprojects with:
+
+```bash
+# arm-none-eabi toolchain with libc required
+export PICO_TOOLCHAIN_PATH=/somewhere/on/your/filesystem/arm-none-eabi-gcc/16.2.0/bin
+# https://github.com/raspberrypi/pico-sdk
+export PICO_SDK_PATH=/somewhere/on/your/filesystem/pico-sdk
+
+mkdir build
+cd build
+cmake ..
+make -j
+```
+
+Deploy a specific project to the USB-attached Pico with:
+
+```bash
+picotool load -f <subproject>.elf
+```
+
+### overflow.elf
 
 This project is used to increment a counter to a value of *UINT32\_MAX* hopefully allowing for an overflow back to 0.
 Alternatively `pocs/counter_overflow.py` can be used as well. 
 
-### serprog\_glitch
+### serprog\_glitch.elf
 
 This project allows for quicker voltage glitching iteration by receiving the delay used in the voltage glitch via serial.
 It is meant to be used in conjuctions with some of the scripts found in the `pocs` directory.
 
-### glitch\_finder
+### glitch\_finder.elf
 
-Very similar to serprog\_glitch but usefull for quickly iterating through different values for the MOSFET open delay for testing.
+Very similar to serprog\_glitch but useful for quickly iterating through different values for the MOSFET open delay for testing.
 
-### interposer
+### interposer.elf
 
 Interposer used to mount the attacks against our target systems.
 To set the specific mode you have to open a tty to the pico (`picocom -b 115200 -q /dev/\<your tty\>`) and then enter the corresponding letter:
