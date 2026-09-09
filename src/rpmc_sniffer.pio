@@ -73,21 +73,12 @@ outerloop_end:
 .side_set 1 opt
 
 public start:
-    set x, 31
-    nop side 1
-wait_loop:
-    nop [7]
-    nop [7]
-    nop [7]
-    jmp x--, wait_loop
-
-tmp_loop:
-    set pins, 0
-    set pins, 1
-    jmp x--, tmp_loop
-
     ; load bits to match into y
     out y, 32
+
+    nop side 1
+    nop [7]
+    nop side 0
 
 ; TODO this should be moved to match_loop once everything works
 .wrap_target
@@ -106,7 +97,7 @@ match_loop:
     ; write back into OSR for later (this also dicards the LSB)
     mov osr, x
 
-    set x, 7                ; bits to match
+    set x, 6                ; bits to match (7, TODO explain)
     mov isr, null
 
     ; wait for falling chip select edge
@@ -125,20 +116,32 @@ bitloop_end:
     ; compare read bits
     mov x, isr              ; move bits read to x
     jmp x!=y, match_loop    ; continue if bits don't match
-
 match_success:
-    ; get the bit count (should be one less than actual) and start muxing
-    out x, 32       side 1
 
-    set pins, 0 [1]
+    ; set miso to 0xFF and start muxing
+    ;set pins, 1      side 1
+
+    ; wait to give the mux some time to switch
+    set x, 7         side 1
+wait_loop:
+    wait 1 gpio CLK
+    wait 0 gpio CLK
+    jmp x--, wait_loop
+wait_loop_end:
+
+    ; get the bit count (should be one less than actual) and start muxing
+    out x, 32
+write_loop:
+    set pins, 0
     set pins, 1
+    jmp x--, write_loop
+write_loop_end:
 
     ; wait for CS to go up again
     wait 1 JMPPIN
 
     ; set miso to 0xFF and stop muxing
     set pins, 1      side 0
-
 
     ; since we can only push words into the fifo, there might still be some
     ; dummy bits left that have to be cleared
@@ -414,7 +417,7 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
     // tell the first SM to match RPMC request commands
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
     // tell the second SM to match OP2
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x96);
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (0x96 >> 1));
     for (unsigned n = 1; ; ++n) {
         for (unsigned i = 0; i < count_of(req.words); ++i)
             req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
@@ -427,7 +430,7 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
         pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
         pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1) << 1);
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4c000000);
+        //pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4c000000);
 
         // TODO: put a short busy status, do the u32_into_u8 and calculate the
         // long status, put a short done status, put the long status
