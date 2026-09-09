@@ -1,5 +1,6 @@
 .program rpmc_sniffer
 
+; TODO: this is not accurate anymore
 ; SPI Sniffer
 ; When triggered, by a 32-bit value BITCOUNT in the TX fifo, this program
 ; will wait for CS to go low and then sniff the next BITCOUNT bits from
@@ -21,7 +22,7 @@ public start:
     out y, 32
 
 match_loop:
-    set x, 15                ; bits to match
+    set x, 15                ; number of bits to match
     mov isr, null
 
     ; wait for falling chip select edge
@@ -42,6 +43,7 @@ bitloop_end:
     jmp x!=y, match_loop    ; continue if bits don't match
 match_success:
 
+    ; TODO: ignore the signature so that everything fits into the fifo
     ; a request command is 48 bytes long, and we have read already the first
     ; two, so we're still missing 46*8 bits. since we can't set immediate values
     ; larger than 31, we have to use two counters for an outer loop and an inner
@@ -208,6 +210,7 @@ struct pio_metadata {
 
 static bool rpmc_sniffer_inited = false;
 static struct pio_metadata rpmc_sniffer_inst;
+// TODO: remove
 static int pin_setter_sm;
 
 static bool interposer_inited = false;
@@ -229,7 +232,7 @@ static void rpmc_sniffer_cleanup() {
     }
 }
 
-static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned int mux) {
+static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
 
     rpmc_sniffer_cleanup();
 
@@ -247,17 +250,13 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     gpio_set_input_hysteresis_enabled(mosi, false);
     pio_gpio_init(rpmc_sniffer_inst.pio, cs);
 
-    pio_gpio_init(rpmc_sniffer_inst.pio, mux);
-    pio_sm_set_consecutive_pindirs(rpmc_sniffer_inst.pio, pin_setter_sm, mux, 1, true);
-    pio_sm_set_set_pins(rpmc_sniffer_inst.pio, pin_setter_sm, mux, 1);
-
     rpmc_sniffer_inst.cfg = rpmc_sniffer_program_get_default_config(rpmc_sniffer_inst.offset);
 
     // io mapping (inputs 0:svd)
     sm_config_set_in_pins(&rpmc_sniffer_inst.cfg, mosi);
     sm_config_set_in_pin_count(&rpmc_sniffer_inst.cfg, 1);
 
-    // shifts are msb-first 32-bits
+    // shifts are msb-first 32-bits, enable autopush and autopull
     sm_config_set_in_shift(&rpmc_sniffer_inst.cfg, false, true, 32);
     sm_config_set_out_shift(&rpmc_sniffer_inst.cfg, false, true, 32);
 
@@ -266,8 +265,6 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
 
     // 125 MHz
     sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
-
-    sm_config_set_set_pins(&rpmc_sniffer_inst.cfg, mux, 1);
 
     int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
     if (rc < 0) {
@@ -417,6 +414,7 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
     // tell the first SM to match RPMC request commands
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
     // tell the second SM to match OP2
+    // TODO: explain the shift (to gain one more clock cycle of time)
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (0x96 >> 1));
     for (unsigned n = 1; ; ++n) {
         for (unsigned i = 0; i < count_of(req.words); ++i)

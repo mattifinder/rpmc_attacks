@@ -492,6 +492,12 @@ int main()
     gpio_put(PIN_N_MUX_EN, 0);
 #endif
 
+    // TODO: configure the TPS2116DRL. powering the flash chip with the 1.8V
+    //   from the pico might make attacks faster but also means that the flash
+    //   chip does not power down together with the framework. this might be
+    //   fine but could lead to problems if there are state changes that
+    //   normally fall back to the default (e.g. enter 4-byte address mode)
+
     // initialize voltage switcher
     gpio_init_mask64((1 << PIN_CHIP_VOLT_MODE) | (1 << PIN_CHIP_VOLT_SEL));
     gpio_put(PIN_CHIP_VOLT_MODE, 1); // enable switching voltage
@@ -539,11 +545,8 @@ int main()
 #endif
             break;
         case 'i':
-
             // toggle the mux pin once so that we can see that the pcbite sits
             // correctly
-#if 1
-            //set_sys_clock_khz(50000, true);
             gpio_put(PIN_MUX_INTERPOSE, 0);
             gpio_put(PIN_MUX_INTERPOSE, 1);
             sleep_us(100);
@@ -554,56 +557,10 @@ int main()
             }
             sleep_us(100);
             gpio_put(PIN_MUX_INTERPOSE, 0);
+            // TODO: remove this or set to 1?
             gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-#if 0
-            for (unsigned i = 0; i < 10; ++i) {
-                gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 1);
-                gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 0);
-            }
-#endif
 
-#if 0
-            //gpio_set_dir(PIN_PICO_BOARD_SPI_MISO_DQ1, true);
-            //gpio_set_dir(PIN_PICO_OUT_SPI_MISO_DQ1, true);
-            gpio_put(PIN_MUX_INTERPOSE, 1);
-            sleep_us(100);
-            for (unsigned i = 0; i < 30; ++i) {
-#if 1
-                //gpio_put(PIN_N_MUX_EN, 0);
-                //gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 0);
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-                //gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 1);
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
-#if 0
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-#endif
-                //gpio_put(PIN_N_MUX_EN, 1);
-#endif
-#if 0
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-                gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 1);
-                gpio_put(PIN_PICO_BOARD_SPI_MISO_DQ1, 0);
-#endif
-            }
-            //gpio_set_dir(PIN_PICO_BOARD_SPI_MISO_DQ1, false);
-            //gpio_set_dir(PIN_PICO_OUT_SPI_MISO_DQ1, false);
-            gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-            gpio_put(PIN_MUX_INTERPOSE, 0);
-#endif
-#endif
-
-            // TODO: configure the TPS2116DRL. powering the flash chip with the
-            //       1.8V from the pico might make attacks faster but also means
-            //       that the flash chip does not power down together with the
-            //       framework. this might be fine but could lead to problems if
-            //       there are state changes that normally fall back to the
-            //       default (e.g. enter 4-byte address mode)
-
-            rpmc_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_MUX_INTERPOSE);
+            rpmc_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
             interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_OUT_SPI_MISO_DQ1, PIN_MUX_INTERPOSE);
             
             printf("Interposing Intel\n");
