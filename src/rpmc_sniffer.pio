@@ -598,6 +598,14 @@ void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t coun
     pio_sm_put_blocking(pio, sm, word);
 }
 
+/* Assumes shift direction is set to left since otherwise put_blocking can be
+ * used without as is.
+ */
+static inline void pio_sm_put_byte_blocking(PIO pio, uint sm, uint8_t data)
+{
+    pio_sm_put_blocking(pio, sm, data << 24);
+}
+
 uint32_t interposer_send_words(const uint32_t *data, const uint32_t count)
 {
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, count * 4 * 8 - 1);

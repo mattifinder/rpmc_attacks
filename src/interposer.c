@@ -98,7 +98,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 }
 #endif
 
-static uint32_t counter_values[4] = {0x0C9A, 0x0C78, 0, 0};
+static uint32_t counter_values[4] = {0x0C9C, 0x0C7A, 0, 0};
 // Keys for key_data 01000000
 #define USE_KEYS_FRAMEWORK_2
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
@@ -237,7 +237,7 @@ void __time_critical_func(interpose_intel)()
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, ((0x96 >> 1) << 1));
     // pre-fill the FIFO with a busy wait message
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000);
+    pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, WAIT);
 
     // tell the third SM to match RPMC increment commands
     pio_sm_put_blocking(increment_listener.pio, increment_listener.sm, 0x9B02);
@@ -287,7 +287,7 @@ void __time_critical_func(interpose_intel)()
 
             // send a ready message
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000);
+            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, DONE);
 
             interposer_send(interposer_inst.pio, interposer_inst.sm, status.buf, sizeof(status.buf));
 
@@ -296,7 +296,7 @@ void __time_critical_func(interpose_intel)()
 
             // fill the FIFO with a busy wait message again
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000);
+            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, WAIT);
 
 #if 0
             printf("request %d:\n"
