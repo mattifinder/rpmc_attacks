@@ -91,9 +91,9 @@ public start:
     ; load bits to match into y
     out y, 32
 
-    nop side 1
+    set pins, 1      side 1
     nop [7]
-    nop side 0
+    set pins, 0      side 0
 
 ; TODO this should be moved to match_loop once everything works
 .wrap_target

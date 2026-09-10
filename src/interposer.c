@@ -36,6 +36,8 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 #define PIN_PICO_BOARD_SPI_MISO_DQ1 5
 #define PIN_PICO_BOARD_SPI_CS 6
 
+// reachable via the header
+#define PIN_PICO_DEBUG_PIN 25
 
 #define HMAC_KEY_SIZE 32
 
@@ -528,7 +530,11 @@ int main()
     //gpio_disable_pulls(PIN_PICO_OUT_SPI_MISO_DQ1);
     //gpio_set_drive_strength(PIN_PICO_BOARD_SPI_MISO_DQ1, GPIO_DRIVE_STRENGTH_12MA);
     //gpio_set_dir_out_masked64((1 << PIN_PICO_OUT_SPI_MISO_DQ1));
-    
+
+    gpio_init(PIN_PICO_DEBUG_PIN);
+    gpio_set_dir(PIN_PICO_DEBUG_PIN, true);
+    gpio_set_slew_rate(PIN_PICO_DEBUG_PIN, GPIO_SLEW_RATE_FAST);
+
     switch (getchar()) {
         // interpose amd 
         case 'a':
@@ -557,11 +563,16 @@ int main()
             }
             sleep_us(100);
             gpio_put(PIN_MUX_INTERPOSE, 0);
+
+            gpio_put(PIN_PICO_DEBUG_PIN, 1);
+            sleep_us(100);
+            gpio_put(PIN_PICO_DEBUG_PIN, 0);
+
             // TODO: remove this or set to 1?
-            gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
+            gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
 
             rpmc_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
-            interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_OUT_SPI_MISO_DQ1, PIN_MUX_INTERPOSE);
+            interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_DEBUG_PIN, PIN_MUX_INTERPOSE);
             increment_listener_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
             
             printf("Interposing Intel\n");
