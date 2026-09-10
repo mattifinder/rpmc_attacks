@@ -174,6 +174,77 @@ abort:
 
 ;-------------------------------------------------------------------------------------------------------------------------;
 
+.program increment_listener
+
+; TODO: describe
+
+.define CLK 2
+
+public start:
+pull_once:
+    ; because we move the bits back into osr after consuming them, we get away
+    ; with doing this only once
+    pull
+
+.wrap_target
+listen_for_match_bits:
+    ; load bits to match into y
+    out y, 32
+
+    ; Since we will have to overwrite register Y later to store something else
+    ; we will loose the match bits. But since we need the match bits in every
+    ; iteration we would have to either pull them again from the FIFO (requiring
+    ; the C code to put them there every iteration) or we can place them back
+    ; into OSR ourselves. This works because we don't have to pull any other
+    ; bits from the FIFO.
+    mov osr, y
+
+match_loop:
+    set x, 15                ; number of bits to match
+    mov isr, null
+
+    ; wait for falling chip select edge
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+
+    ; sample the bits to match into x on every rising clock edge
+bitloop:
+    wait 1 gpio CLK
+    in pins, 1
+    ; make sure that the clock goes down in between
+    wait 0 gpio CLK
+    jmp x--, bitloop
+bitloop_end:
+
+    ; compare read bits
+    mov x, isr              ; move bits read to x
+    jmp x!=y, match_loop    ; continue if bits don't match
+match_success:
+
+    ; An increment command is 40 bytes long, but we're not interested in the 32
+    ; bytes of signature at the end and have read already the first two, so
+    ; we're still missing 6*8 bits. since we can't set immediate values larger
+    ; than 31, we have to use two counters for an outer loop and an inner one.
+    ; 6*8/16 = 3
+    ; NOTE: make sure the pico is fast enough for this (overclocking might be
+    ;       necessary)
+    set y, 2
+outerloop:
+    set x, 15
+innerloop:
+    wait 1 gpio CLK
+    in pins, 1
+    wait 0 gpio CLK
+    jmp x--, innerloop
+innerloop_end:
+    jmp y--, outerloop
+outerloop_end:
+
+    ; jump back to listen_for_match_bits
+.wrap
+
+;-------------------------------------------------------------------------------------------------------------------------;
+
 % c-sdk {
 struct __attribute((__packed__)) rpmc_command_info {
     uint8_t dummy[2];
@@ -228,6 +299,8 @@ static int pin_setter_sm;
 
 static bool interposer_inited = false;
 static struct pio_metadata interposer_inst;
+
+static struct pio_metadata increment_listener;
 
 void deinit(struct pio_metadata * inst, const pio_program_t * prog)
 {
@@ -347,6 +420,46 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int m
     interposer_inited = true;
 }
 
+bool increment_listener_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi)
+{
+    if (!pio_claim_free_sm_and_add_program(&increment_listener_program, &increment_listener.pio, &increment_listener.sm, &increment_listener.offset)) {
+        printf("Error: Increment listener program could not be loaded/could not claim state machine!\n");
+        return false;
+    }
+    printf("increment_listener: %u\n", PIO_NUM(increment_listener.pio));
+
+    pio_gpio_init(increment_listener.pio, clk);
+    gpio_set_input_hysteresis_enabled(clk, false);
+    pio_gpio_init(increment_listener.pio, mosi);
+    gpio_set_input_hysteresis_enabled(mosi, false);
+    pio_gpio_init(increment_listener.pio, cs);
+
+    increment_listener.cfg = increment_listener_program_get_default_config(increment_listener.offset);
+
+    // io mapping (inputs 0:svd)
+    sm_config_set_in_pins(&increment_listener.cfg, mosi);
+    sm_config_set_in_pin_count(&increment_listener.cfg, 1);
+
+    // shifts are msb-first 32-bits, enable autopush but disable autopull
+    sm_config_set_in_shift(&increment_listener.cfg, false, true, 32);
+    sm_config_set_out_shift(&increment_listener.cfg, false, false, 32);
+
+    // setup cs as jump pins
+    sm_config_set_jmp_pin(&increment_listener.cfg, cs);
+
+    // normal clock speed
+    sm_config_set_clkdiv(&increment_listener.cfg, 1.0f);
+
+    int rc = pio_sm_init(increment_listener.pio, increment_listener.sm, increment_listener.offset + increment_listener_offset_start, &increment_listener.cfg);
+    if (rc < 0) {
+        printf("Error: increment listener sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(increment_listener.pio, increment_listener.sm, true);
+
+    return true;
+}
+
 inline void reverse_inplace(uint32_t *x)
 {
     *x = (*x << 24) | ((*x << 8) & 0xFF0000) | ((*x >> 8) & 0xFF00) | (*x >> 24);
@@ -423,39 +536,80 @@ union rpmc_request {
     uint8_t buf[16];   // 48 with sig
 };
 
-static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info) {
-    union rpmc_request req;
+union rpmc_increment {
+    struct __attribute((__packed__)) {
+        uint8_t op1;
+        uint8_t typ;
+        uint8_t idx;
+        uint8_t reserved;
+        uint32_t old;
+        // we don't need the signature and this way everything fits nicely into
+        // the FIFO at once
+        //uint8_t sig[32];
+    };
+    uint32_t words[2]; // 10 with sig
+    uint8_t buf[8];    // 40 with sig
+};
 
+static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info) {
     // tell the first SM to match RPMC request commands
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
     // tell the second SM to match OP2
     // TODO: explain the shift (to gain one more clock cycle of time)
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (0x96 >> 1));
-    for (unsigned n = 1; ; ++n) {
-        for (unsigned i = 0; i < count_of(req.words); ++i)
-            req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+    // tell the third SM to match RPMC increment commands
+    pio_sm_put_blocking(increment_listener.pio, increment_listener.sm, 0x9B02);
 
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1) << 1);
-        //pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4c000000);
+    unsigned n_req = 1;
+    unsigned n_inc = 1;
+    // TODO: do this via the pis_smX_rx_fifo_not_empty interrupts
+    while (true) {
+        if (!pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm)) {
+            union rpmc_request req;
 
-        // TODO: put a short busy status, do the u32_into_u8 and calculate the
-        // long status, put a short done status, put the long status
+            for (unsigned i = 0; i < count_of(req.words); ++i)
+                req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1) << 1);
+            //pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4c000000);
+
+            // TODO: put a short busy status, do the u32_into_u8 and calculate the
+            // long status, put a short done status, put the long status
 
 #if 0
-        u32_into_u8(&req.buf[1], req.tag, sizeof(req.tag));
+            u32_into_u8(&req.buf[1], req.tag, sizeof(req.tag));
 #else
-        // TODO: it might be enough to only do this with the tag
-        u32_into_u8(req.words, req.buf, sizeof(req.buf));
+            // TODO: it might be enough to only do this with the tag
+            u32_into_u8(req.words, req.buf, sizeof(req.buf));
 #endif
 
 #if 1
-        printf("request %d:\n"
-               "\tidx: %02x\n"
-               "\ttag: %02x%02x...%02x%02x\n",
-               n, req.idx, req.tag[0], req.tag[1], req.tag[10], req.tag[11]);
-        //printf("\top1: %02x\n", req.op1);
-        //printf("\ttyp: %02x\n", req.typ);
+            printf("request %d:\n"
+                   "\tidx: %02x\n"
+                   "\ttag: %02x%02x...%02x%02x\n",
+                   n_req++, req.idx, req.tag[0], req.tag[1], req.tag[10], req.tag[11]);
+            //printf("\top1: %02x\n", req.op1);
+            //printf("\ttyp: %02x\n", req.typ);
 #endif
+        } else if (!pio_sm_is_rx_fifo_empty(increment_listener.pio, increment_listener.sm)) {
+            union rpmc_increment inc;
+
+            for (unsigned i = 0; i < count_of(inc.words); ++i)
+                inc.words[i] = pio_sm_get_blocking(increment_listener.pio, increment_listener.sm);
+
+            u32_into_u8(&inc.words[0], &inc.buf[0], 1);
+
+            // TODO: increment internal counter for inc.idx
+
+#if 1
+            printf("increment %d:\n"
+                   "\tidx: %02x\n"
+                   "\told: %08x\n",
+                   n_inc++, inc.idx, inc.old);
+            //printf("\top1: %02x\n", inc.op1);
+            //printf("\ttyp: %02x\n", inc.typ);
+#endif
+        }
     }
 
     return 0;
