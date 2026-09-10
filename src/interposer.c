@@ -38,7 +38,7 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 
 // reachable via the header
 #define PIN_PICO_DEBUG_PIN 25
-#undef PIN_PICO_DEBUG_PIN
+//#undef PIN_PICO_DEBUG_PIN
 
 #define HMAC_KEY_SIZE 32
 

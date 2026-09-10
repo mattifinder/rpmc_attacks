@@ -89,29 +89,22 @@ outerloop_end:
 
 public start:
     ; load bits to match into y
-    out y, 32
+    out y, 31 ; will block at the very first time, but only introduces one cycle of latency.
 
     ;set pins, 1      side 1
     ;nop [7]
     ;set pins, 0      side 0
 
-; TODO this should be moved to match_loop once everything works
-.wrap_target
-wait_for_request:
+public restart:
     ; wait for the first SM to notify us about a found request command
     irq wait 4
 
+.wrap_target
 match_loop:
-    ; peak at the bit count and abort if it is zero.
-    ; get 31 bits so that the pull threshold is not yet met. since we shift out
-    ; right, we're missing the LSB of the bit count, which is then cleared by
-    ; the mov operation. the bit count thus has to be shifted once to the left
-    ; before pushing it into the FIFO
-    ;out x, 32
-    ; Abort if MSB is zero
-    ; NOTE: we still have 31 bits left in OSR, but they will be cleared with the
-    ;       pull above
-    ;jmp !x wait_for_request
+    pull ; ensure we have the fresh length word in osr
+
+    ;out x, 1
+    ;jmp !x abort
 
     set x, 6                ; bits to match (7, TODO explain)
     mov isr, null
@@ -145,12 +138,12 @@ wait_loop:
 wait_loop_end:
 
     ; get the bit count (should be one less than actual) and start muxing
-    out x, 32
+    out x, 32 ; cannot stall due to autopull, because we assume all data to be pushed fast enough.
 write_loop:
     ; write bit to miso before a rising clock edge
     wait 0 gpio CLK
     wait 1 gpio CLK
-    out pins, 1
+    out pins, 1 ; cannot stall due to assumptions.
     ;jmp PIN write_loop_end
     jmp x--, write_loop
 write_loop_end:
@@ -166,10 +159,15 @@ write_loop_end:
     ; TODO: I think we're clearing one word too much if the bit count was
     ;       divisable by 32.
     ;mov OSR, NULL
-    ;out NULL, 24
+    ;out NULL, 32
+
+    ; ensure we have the fresh continue/done word in osr
     pull
 
-    ; jump back to wait_for_request
+    out x, 1
+    jmp !x, restart
+
+    ; jump back to match_loop
 .wrap
 
 ;-------------------------------------------------------------------------------------------------------------------------;
@@ -554,12 +552,17 @@ union rpmc_increment {
 static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info) {
     // tell the first SM to match RPMC request commands
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
+
     // tell the second SM to match OP2
     // TODO: explain the shift (to gain one more clock cycle of time)
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (0x96 >> 1));
-
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x96);
+    // pre-fill the FIFO with a busy wait message
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4d000000);
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000); // busy
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // continue
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // done
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0); // done
 
     // tell the third SM to match RPMC increment commands
     pio_sm_put_blocking(increment_listener.pio, increment_listener.sm, 0x9B02);
@@ -568,21 +571,28 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
     unsigned n_inc = 1;
     // TODO: do this via the pis_smX_rx_fifo_not_empty interrupts
     while (true) {
-        if (!pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm)) {
+        if (true || !pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm)) {
             union rpmc_request req;
 
             for (unsigned i = 0; i < count_of(req.words); ++i)
                 req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4d000000);
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000); // busy
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // continue
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // done
+        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0); // done
 
             // TODO: put a short busy status, do the u32_into_u8 and calculate the
             // long status, put a short done status, put the long status
-
             u32_into_u8(req.words, req.buf, sizeof(req.buf));
 
-#if 1
+            // fill the FIFO with a busy wait message again
+            //pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+            //pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000);
+
+#if 0
             printf("request %d:\n"
                    "\tidx: %02x\n"
                    "\ttag: %02x%02x...%02x%02x\n",
