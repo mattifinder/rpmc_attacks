@@ -1,4 +1,5 @@
-Output matches the trace:
+Output matches the trace (increment's old value has the wrong byte
+order):
 
 	rpmc_sniffer: 2
 	interposer_pio: 1
