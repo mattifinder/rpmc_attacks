@@ -98,7 +98,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 }
 #endif
 
-static uint32_t counter_values[4] = {0x0C9C, 0x0C7A, 0, 0};
+static uint32_t counter_values[4] = {0x0CF6, 0x0CD4, 0, 0};
 // Keys for key_data 01000000
 #define USE_KEYS_FRAMEWORK_2
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
@@ -315,18 +315,13 @@ void __time_critical_func(interpose_intel)()
             u32_into_u8(&inc.words[0], &inc.buf[0], 4);
 
 #if 1
-            printf("increment %d:\n"
-                   "\tidx: %02x\n"
-                   "\told: %08x\n",
-                   n_inc++, inc.idx, inc.old);
-            //printf("\top1: %02x\n", inc.op1);
-            //printf("\ttyp: %02x\n", inc.typ);
+            printf("++c%d (=%x)\n", inc.idx, inc.old + 1);
 #endif
             if (inc.idx > 1)
                 continue;
 
             if (counter_values[inc.idx] != inc.old) {
-                printf("Counter %02x value mismatch: %08x != %08x\n", inc.idx,
+                printf("c%d mismatch: %08x != %08x\n", inc.idx,
                        counter_values[inc.idx], inc.old);
                 counter_values[inc.idx] = inc.old;
             }
