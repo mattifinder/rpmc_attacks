@@ -98,7 +98,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 }
 #endif
 
-static uint32_t counter_values[4] = {0x0C96, 0x0C74, 0, 0};
+static uint32_t counter_values[4] = {0x0C9A, 0x0C78, 0, 0};
 // Keys for key_data 01000000
 #define USE_KEYS_FRAMEWORK_2
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
@@ -272,7 +272,7 @@ void __time_critical_func(interpose_intel)()
                             sizeof(status.tag) + sizeof(status.val),
                             status.sig);
 
-#if 1
+#if 0
             printf("status %d:\n"
                    "\tidx: %02x\n"
                    "\ttag: %02x%02x...%02x%02x\n"
@@ -289,8 +289,7 @@ void __time_critical_func(interpose_intel)()
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000);
 
-            //interposer_send(interposer_inst.pio, interposer_inst.sm, status.buf, sizeof(status.buf));
-
+            interposer_send(interposer_inst.pio, interposer_inst.sm, status.buf, sizeof(status.buf));
 
             // tell the SM to wait for the next request
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 1 << 31);

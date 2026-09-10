@@ -569,43 +569,33 @@ static int __time_critical_func(listen_for_op2_and_mux)() {
     return 0;
 }
 
-/*
- * TODO: when the bytecount is way bigger than what is actually written during
- * low chip select, this function takes a long time since it still writes
- * everything into the FIFO. Improve this by checking if the rx FIFO contains
- * something before every put and abort in that case. This way we could always
- * send the long status without running into delays.
- *
- * size of the buffer behind data must be at least `(count + 3) / 4 * 4` big
- */
-uint32_t interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t count)
+void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t count)
 {
+    size_t i;
+    uint32_t word;
+
     // put bit count
     pio_sm_put_blocking(pio, sm, count * 8 - 1);
 
-    for (size_t i = 0; i < (count + 3) / 4; i++) {
-         uint32_t word = 0;
-         word |= data[i * 4 + 0] << 24;
-         word |= data[i * 4 + 1] << 16;
-         word |= data[i * 4 + 2] << 8;
-         word |= data[i * 4 + 3];
+    // put data in words
+    uint32_t words = count & ~0b11;
+    for (i = 0; i < words; i += 4) {
+        word = 0;
+        word |= data[i + 0] << 24;
+        word |= data[i + 1] << 16;
+        word |= data[i + 2] << 8;
+        word |= data[i + 3];
         pio_sm_put_blocking(pio, sm, word);
     }
 
-#if 0
-    printf("after push\n");
-    printf("tx empty: %d\n", pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
-    printf("rx empty: %d\n", pio_sm_is_rx_fifo_empty(interposer_inst.pio, interposer_inst.sm));
-#endif
+    if (i >= count)
+        return;
 
-    uint32_t remaining;
-    remaining = pio_sm_get_blocking(interposer_inst.pio, interposer_inst.sm);
-
-    if (!pio_sm_is_tx_fifo_empty(interposer_inst.pio, interposer_inst.sm)) {
-        printf("Error: State machine FIFO should be empty\n");
-    }
-
-    return remaining + 1;
+    // put last 1-3 bytes
+    word = 0;
+    for (size_t j = 0; j < (count % 4); ++j)
+        word |= data[i + j] << (24 - 8 * j);
+    pio_sm_put_blocking(pio, sm, word);
 }
 
 uint32_t interposer_send_words(const uint32_t *data, const uint32_t count)
