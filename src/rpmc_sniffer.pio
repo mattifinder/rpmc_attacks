@@ -137,7 +137,7 @@ match_success:
     ;set pins, 1      side 1
 
     ; wait to give the mux some time to switch
-    set x, 7         side 1
+    set x, 6         side 1
 wait_loop:
     wait 1 gpio CLK
     wait 0 gpio CLK
@@ -147,8 +147,10 @@ wait_loop_end:
     ; get the bit count (should be one less than actual) and start muxing
     out x, 32
 write_loop:
-    set pins, 0
-    set pins, 1
+    ; write bit to miso before a rising clock edge
+    wait 1 gpio CLK
+    wait 0 gpio CLK
+    out pins, 1
     jmp x--, write_loop
 write_loop_end:
 
@@ -571,17 +573,12 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
                 req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1) << 1);
-            //pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4c000000);
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x4d000000);
 
             // TODO: put a short busy status, do the u32_into_u8 and calculate the
             // long status, put a short done status, put the long status
 
-#if 0
-            u32_into_u8(&req.buf[1], req.tag, sizeof(req.tag));
-#else
-            // TODO: it might be enough to only do this with the tag
             u32_into_u8(req.words, req.buf, sizeof(req.buf));
-#endif
 
 #if 1
             printf("request %d:\n"
