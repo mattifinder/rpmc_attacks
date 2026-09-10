@@ -139,8 +139,8 @@ match_success:
     ; wait to give the mux some time to switch
     set x, 6         side 1
 wait_loop:
-    wait 1 gpio CLK
     wait 0 gpio CLK
+    wait 1 gpio CLK
     jmp x--, wait_loop
 wait_loop_end:
 
@@ -148,8 +148,8 @@ wait_loop_end:
     out x, 32
 write_loop:
     ; write bit to miso before a rising clock edge
-    wait 1 gpio CLK
     wait 0 gpio CLK
+    wait 1 gpio CLK
     out pins, 1
     jmp x--, write_loop
 write_loop_end:
