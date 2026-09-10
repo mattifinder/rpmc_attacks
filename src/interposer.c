@@ -98,7 +98,7 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 }
 #endif
 
-static uint32_t counter_values[4] = {1829, 1814, 0, 0};
+static uint32_t counter_values[4] = {0x0C96, 0x0C74, 0, 0};
 // Keys for key_data 01000000
 #define USE_KEYS_FRAMEWORK_2
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
@@ -249,17 +249,49 @@ void __time_critical_func(interpose_intel)()
     while (true) {
         if (!pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm)) {
             union rpmc_request req;
+            union rpmc_read_data status = { .status = DONE };
 
+            // get the request command
             for (unsigned i = 0; i < count_of(req.words); ++i)
                 req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
-            // TODO: put a short busy status, do the u32_into_u8 and calculate the
-            // long status, put a short done status, put the long status
+            // at this point we already sent the pre-filled busy message, so we
+            // don't need to worry about that here
+
+            // fix byte order of everything
             u32_into_u8(req.words, req.buf, sizeof(req.buf));
+
+            const uint8_t *key = hmac_keys + HMAC_KEY_SIZE * req.idx;
+
+            memcpy(status.tag, req.tag, sizeof(status.tag));
+            status.val = reverse(counter_values[req.idx]);
+            mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                            key,
+                            HMAC_KEY_SIZE,
+                            status.tag,
+                            sizeof(status.tag) + sizeof(status.val),
+                            status.sig);
+
+#if 1
+            printf("status %d:\n"
+                   "\tidx: %02x\n"
+                   "\ttag: %02x%02x...%02x%02x\n"
+                   "\tval: %04x\n"
+                   "\tsig: %02x%02x...%02x%02x\n",
+                   n_req++,
+                   req.idx,
+                   status.tag[0], status.tag[1], status.tag[10], status.tag[11],
+                   status.val,
+                   status.sig[0], status.sig[1], status.sig[30], status.sig[31]);
+#endif
 
             // send a ready message
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000);
+
+            //interposer_send(interposer_inst.pio, interposer_inst.sm, status.buf, sizeof(status.buf));
+
+
             // tell the SM to wait for the next request
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 1 << 31);
 
@@ -294,13 +326,13 @@ void __time_critical_func(interpose_intel)()
             if (inc.idx > 1)
                 continue;
 
-            if (values[inc.idx] != inc.old) {
+            if (counter_values[inc.idx] != inc.old) {
                 printf("Counter %02x value mismatch: %08x != %08x\n", inc.idx,
-                       values[inc.idx], inc.old);
-                values[inc.idx] = inc.old;
+                       counter_values[inc.idx], inc.old);
+                counter_values[inc.idx] = inc.old;
             }
 
-            values[inc.idx]++;
+            counter_values[inc.idx]++;
         }
     }
 
@@ -333,7 +365,7 @@ void __time_critical_func(interpose_intel)()
 
             size_t size = info.get.end - (uint8_t *)&info;
             static_assert(!(offsetof(struct rpmc_command_info, get.end) % 4));
-            interposer_send((const uint8_t *)&info, size);
+            //interposer_send((const uint8_t *)&info, size);
 
             interposer_stop();
         } else if (info.kind == UPDATE_HMAC_KEY) {
