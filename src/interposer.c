@@ -227,10 +227,86 @@ void __time_critical_func(interpose_intel)()
      * commands. (update_hmac_key may go through and increments are only
      * optional since we spoof requests anyways)
      */
-    while (true) {
-        listen_for_op1(&info);
-        continue;
 
+    // tell the first SM to match RPMC request commands
+    pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
+
+    // tell the second SM to match OP2
+    // TODO: explain the shifts (to gain one more clock cycle of time and
+    //       because the PIO discars the LSB due to autopull issues)
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, ((0x96 >> 1) << 1));
+    // pre-fill the FIFO with a busy wait message
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000);
+
+    // tell the third SM to match RPMC increment commands
+    pio_sm_put_blocking(increment_listener.pio, increment_listener.sm, 0x9B02);
+
+    unsigned n_req = 1;
+    unsigned n_inc = 1;
+
+    // TODO: do this via the pis_smX_rx_fifo_not_empty interrupts
+    while (true) {
+        if (!pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm)) {
+            union rpmc_request req;
+
+            for (unsigned i = 0; i < count_of(req.words); ++i)
+                req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+
+            // TODO: put a short busy status, do the u32_into_u8 and calculate the
+            // long status, put a short done status, put the long status
+            u32_into_u8(req.words, req.buf, sizeof(req.buf));
+
+            // send a ready message
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000);
+            // tell the SM to wait for the next request
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 1 << 31);
+
+            // fill the FIFO with a busy wait message again
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000);
+
+#if 0
+            printf("request %d:\n"
+                   "\tidx: %02x\n"
+                   "\ttag: %02x%02x...%02x%02x\n",
+                   n_req++, req.idx, req.tag[0], req.tag[1], req.tag[10], req.tag[11]);
+            //printf("\top1: %02x\n", req.op1);
+            //printf("\ttyp: %02x\n", req.typ);
+#endif
+        } else if (!pio_sm_is_rx_fifo_empty(increment_listener.pio, increment_listener.sm)) {
+            union rpmc_increment inc;
+
+            for (unsigned i = 0; i < count_of(inc.words); ++i)
+                inc.words[i] = pio_sm_get_blocking(increment_listener.pio, increment_listener.sm);
+
+            u32_into_u8(&inc.words[0], &inc.buf[0], 4);
+
+#if 1
+            printf("increment %d:\n"
+                   "\tidx: %02x\n"
+                   "\told: %08x\n",
+                   n_inc++, inc.idx, inc.old);
+            //printf("\top1: %02x\n", inc.op1);
+            //printf("\ttyp: %02x\n", inc.typ);
+#endif
+            if (inc.idx > 1)
+                continue;
+
+            if (values[inc.idx] != inc.old) {
+                printf("Counter %02x value mismatch: %08x != %08x\n", inc.idx,
+                       values[inc.idx], inc.old);
+                values[inc.idx] = inc.old;
+            }
+
+            values[inc.idx]++;
+        }
+    }
+
+    return;
+
+    while (true) {
         //printf("Received RPMC command %i to %i\n", info.kind, info.target_counter);
 
         if (info.kind == INCREMENT) {
