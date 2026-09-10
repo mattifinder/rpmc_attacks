@@ -91,21 +91,20 @@ public start:
     ; load bits to match into y
     out y, 31 ; will block at the very first time, but only introduces one cycle of latency.
 
-    ;set pins, 1      side 1
-    ;nop [7]
-    ;set pins, 0      side 0
+.wrap_target
+entry:
+    ; ensure we have the fresh continue/done/length word in osr
+    pull
 
-public restart:
+    out x, 1
+    ; MSB set means wait for interrupt otherwise length is valid
+    jmp !x, match_loop
+
     ; wait for the first SM to notify us about a found request command
     irq wait 4
+    jmp entry
 
-.wrap_target
 match_loop:
-    pull ; ensure we have the fresh length word in osr
-
-    ;out x, 1
-    ;jmp !x abort
-
     set x, 6                ; bits to match (7, TODO explain)
     mov isr, null
 
@@ -138,7 +137,7 @@ wait_loop:
 wait_loop_end:
 
     ; get the bit count (should be one less than actual) and start muxing
-    out x, 32 ; cannot stall due to autopull, because we assume all data to be pushed fast enough.
+    out x, 31 ; cannot stall due to autopull, because we assume all data to be pushed fast enough.
 write_loop:
     ; write bit to miso before a rising clock edge
     wait 0 gpio CLK
@@ -161,13 +160,7 @@ write_loop_end:
     ;mov OSR, NULL
     ;out NULL, 32
 
-    ; ensure we have the fresh continue/done word in osr
-    pull
-
-    out x, 1
-    jmp !x, restart
-
-    ; jump back to match_loop
+    ; jump back to entry
 .wrap
 
 ;-------------------------------------------------------------------------------------------------------------------------;
@@ -559,10 +552,9 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
     // pre-fill the FIFO with a busy wait message
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000); // busy
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // continue
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // done
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0); // done
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 1 << 31); // done
 
     // tell the third SM to match RPMC increment commands
     pio_sm_put_blocking(increment_listener.pio, increment_listener.sm, 0x9B02);
@@ -577,12 +569,11 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
             for (unsigned i = 0; i < count_of(req.words); ++i)
                 req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
 
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000); // busy
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // continue
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // done
-        pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0); // done
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000); // busy
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x80000000); // done
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 1 << 31); // done
 
             // TODO: put a short busy status, do the u32_into_u8 and calculate the
             // long status, put a short done status, put the long status
