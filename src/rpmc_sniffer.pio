@@ -88,21 +88,24 @@ outerloop_end:
 .side_set 1 opt
 
 public start:
-    ; load bits to match into y
-    out y, 31 ; will block at the very first time, but only introduces one cycle of latency.
+    ; load bits to match into y. we pull only 31 bits to not trigger autopull.
+    ; the LSB is discarded by the pull below which means that the match bits
+    ; have to be shifted left once before being put into the FIFO
+    out y, 31
 
-.wrap_target
-entry:
-    ; ensure we have the fresh continue/done/length word in osr
-    pull
-
-    out x, 1
-    ; MSB set means wait for interrupt otherwise length is valid
-    jmp !x, match_loop
-
+wait_for_request:
     ; wait for the first SM to notify us about a found request command
     irq wait 4
-    jmp entry
+
+.wrap_target
+status_reply:
+    ; pull the continue/done + length word into OSR
+    pull
+
+    ; MSB set means wait for interrupt (i.e. next request command), otherwise
+    ; the rest of OSR contains a valid length
+    out x, 1
+    jmp x--, wait_for_request
 
 match_loop:
     set x, 6                ; bits to match (7, TODO explain)
@@ -136,13 +139,15 @@ wait_loop:
     jmp x--, wait_loop
 wait_loop_end:
 
-    ; get the bit count (should be one less than actual) and start muxing
-    out x, 31 ; cannot stall due to autopull, because we assume all data to be pushed fast enough.
+    ; get the bit count (should be one less than actual) and start muxing. this
+    ; shouldn't stall due to autopull, because we assume data to be pushed fast
+    ; enough after the length
+    out x, 31
 write_loop:
     ; write bit to miso before a rising clock edge
     wait 0 gpio CLK
     wait 1 gpio CLK
-    out pins, 1 ; cannot stall due to assumptions.
+    out pins, 1
     ;jmp PIN write_loop_end
     jmp x--, write_loop
 write_loop_end:
@@ -154,13 +159,11 @@ write_loop_end:
     set pins, 1      side 0
 
     ; since we can only push words into the fifo, there might still be some
-    ; dummy bits left that have to be cleared
+    ; dummy bits left in OSR. these will get cleared by the pull in status_reply
     ; TODO: I think we're clearing one word too much if the bit count was
     ;       divisable by 32.
-    ;mov OSR, NULL
-    ;out NULL, 32
 
-    ; jump back to entry
+    ; jump back to status_reply
 .wrap
 
 ;-------------------------------------------------------------------------------------------------------------------------;
@@ -547,8 +550,9 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
     pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
 
     // tell the second SM to match OP2
-    // TODO: explain the shift (to gain one more clock cycle of time)
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x96);
+    // TODO: explain the shifts (to gain one more clock cycle of time and
+    //       because the PIO discars the LSB due to autopull issues)
+    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, ((0x96 >> 1) << 1));
     // pre-fill the FIFO with a busy wait message
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
     pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 0x01000000); // busy
