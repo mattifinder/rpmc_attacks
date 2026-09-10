@@ -19,3 +19,10 @@ This file contains three main attack scripts.
 `glitch_increment_counter` is used together with a serprog_glitch based pico setup to leak a valid signature for increment operations.
 `leak_hmac_key` can be used to leak a the hmac key for the specified key data from a Winbond SPI flash chip.
 `glitch_get` is used to test a flash chip for the possiblity, or do it on GigaDevice chips, of changing the returned counter value from a get request.
+
+## rpmc_ops.py
+
+This file provides two methods for users to issue RPMC commands with flash chips via an external programmer.
+Either one can use the API functions, or call the file directly to get access to it's cli.
+Running without arguments returns the possible cli options.
+This is useful when wanting to issue commands without a valid root key, e.g. after having leaked one HMAC key.

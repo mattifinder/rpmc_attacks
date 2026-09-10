@@ -64,6 +64,7 @@ Rollbacking the whole flash is also possible, but inefficient, though this is a 
 To find them we looked for the sections that changed and extracted them using [psptool](https://github.com/pspreverse/psptool) and then converting them to header format using `xxd -i`.
 In our case these were the sections *PSP\_NVRAM* (0x1100000 size 0x40000), *PSP\_NV\_DATA* (0x10e0000 size 0x20000), and *ROM\_ARMOR\_BIOS\_NVSTORE* (x1060000 size 0x40000).
 Because these large files fill up the picos storage, we needed to perform some optimization on one of them to remove trailing 0xff and then implement the clearing of these bytes in another loop (see `reprogram\_flash()`).
+All these values need to be put in the `include/psp_nvdata.h` file.
 
 #### Reducing SPI Speed
 
