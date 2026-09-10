@@ -56,14 +56,14 @@ bitloop_end:
     jmp x!=y, match_loop    ; continue if bits don't match
 match_success:
 
-    ; TODO: ignore the signature so that everything fits into the fifo
-    ; a request command is 48 bytes long, and we have read already the first
-    ; two, so we're still missing 46*8 bits. since we can't set immediate values
-    ; larger than 31, we have to use two counters for an outer loop and an inner
-    ; one. 46*8/16 = 23
+    ; A request command is 48 bytes long, but we're not interested in the 32
+    ; bytes of signature at the end and have read already the first two, so
+    ; we're still missing 14*8 bits. since we can't set immediate values larger
+    ; than 31, we have to use two counters for an outer loop and an inner one.
+    ; 14*8/16 = 7
     ; NOTE: make sure the pico is fast enough for this (overclocking might be
     ;       necessary)
-    set y, 22
+    set y, 6
 outerloop:
     set x, 15
 innerloop:
@@ -415,10 +415,12 @@ union rpmc_request {
         uint8_t idx;
         uint8_t reserved;
         uint8_t tag[12];
-        uint8_t sig[32];
+        // we don't need the signature and this way everything fits nicely into
+        // the FIFO at once
+        //uint8_t sig[32];
     };
-    uint32_t words[12];
-    uint8_t buf[48];
+    uint32_t words[4]; // 12 with sig
+    uint8_t buf[16];   // 48 with sig
 };
 
 static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info) {
@@ -453,7 +455,6 @@ static int __time_critical_func(listen_for_op1)(struct rpmc_command_info * info)
                n, req.idx, req.tag[0], req.tag[1], req.tag[10], req.tag[11]);
         //printf("\top1: %02x\n", req.op1);
         //printf("\ttyp: %02x\n", req.typ);
-        //printf("\tsig: %02x%02x...%02x%02x\n", req.sig[0], req.sig[1], req.sig[30], req.sig[31]);
 #endif
     }
 
