@@ -333,6 +333,21 @@ void __time_critical_func(interpose_intel)()
             }
 
             counter_values[inc.idx]++;
+
+            // send a short ready message
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, DONE);
+
+            // send a short ready message
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, DONE);
+
+            // tell the SM to wait for the next request
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 1 << 31);
+
+            // fill the FIFO with a busy wait message again
+            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
+            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, WAIT);
         }
     }
 

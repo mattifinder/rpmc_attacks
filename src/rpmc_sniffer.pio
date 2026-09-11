@@ -234,6 +234,12 @@ innerloop_end:
     jmp y--, outerloop
 outerloop_end:
 
+    ; notify the second state machine that it can start looking for OP2
+    irq next clear 4
+
+    ; wait for CS to go up again
+    wait 1 JMPPIN
+
     ; jump back to listen_for_match_bits
 .wrap
 
@@ -416,6 +422,7 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int m
 
 bool increment_listener_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi)
 {
+    // TODO: switch to pio_add_program. Does THIRD_PIO exist?
     if (!pio_claim_free_sm_and_add_program(&increment_listener_program, &increment_listener.pio, &increment_listener.sm, &increment_listener.offset)) {
         printf("Error: Increment listener program could not be loaded/could not claim state machine!\n");
         return false;
