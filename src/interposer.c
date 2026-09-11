@@ -285,10 +285,11 @@ void __time_critical_func(interpose_intel)()
                    status.sig[0], status.sig[1], status.sig[30], status.sig[31]);
 #endif
 
-            // send a ready message
+            // send a short ready message
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
             pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, DONE);
 
+            // send the long status
             interposer_send(interposer_inst.pio, interposer_inst.sm, status.buf, sizeof(status.buf));
 
             // tell the SM to wait for the next request
@@ -309,9 +310,14 @@ void __time_critical_func(interpose_intel)()
         } else if (!pio_sm_is_rx_fifo_empty(increment_listener.pio, increment_listener.sm)) {
             union rpmc_increment inc;
 
+            // get the increment command
             for (unsigned i = 0; i < count_of(inc.words); ++i)
                 inc.words[i] = pio_sm_get_blocking(increment_listener.pio, increment_listener.sm);
 
+            // at this point we already sent the pre-filled busy message, so we
+            // don't need to worry about that here
+
+            // fix byte order of everything
             u32_into_u8(&inc.words[0], &inc.buf[0], 4);
 
 #if 1
