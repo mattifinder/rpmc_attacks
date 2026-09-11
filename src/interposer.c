@@ -9,8 +9,8 @@
 #include <string.h>
 #include "spi_sniff.pio.h"
 #include "rpmc_sniffer.pio.h"
-#include "psp_nvdata.h"
-
+//#include "psp_nvdata.h"
+#include "intel_flash_rollback.h"
 
 #define PIN_N_MUX_EN 17
 bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
@@ -39,6 +39,14 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 // reachable via the header
 #define PIN_PICO_DEBUG_PIN 25
 #undef PIN_PICO_DEBUG_PIN
+
+// pins to reprogram the flash
+#define CAPTURE_SPI spi0
+#define MASTER_SPI CAPTURE_SPI
+#define PIN_PICO_CHIP_SPI_RX 32
+#define PIN_PICO_CHIP_SPI_CS 33
+#define PIN_PICO_CHIP_SPI_CLK 34
+#define PIN_PICO_CHIP_SPI_TX 35
 
 #define HMAC_KEY_SIZE 32
 
@@ -498,7 +506,7 @@ void __time_critical_func(flash_write_enable)(spi_inst_t *spi, uint cs_pin) {
 
 void __time_critical_func(flash_wait_done)(spi_inst_t *spi, uint cs_pin) {
     while (get_flash_status(spi, cs_pin) != 0)
-        sleep_us(100);
+        sleep_ms(1);
 }
 
 void write_segment(spi_inst_t * const out_spi, const unsigned int cs, const uint32_t base_addres, const size_t len , const uint8_t data[len])
@@ -512,7 +520,7 @@ void write_segment(spi_inst_t * const out_spi, const unsigned int cs, const uint
             flash_erase(out_spi, cs, target_addr);
             sleep_us(100);
             flash_wait_done(out_spi, cs);
-            printf("flash_erase: %x\n", target_addr);
+            //printf("flash_erase: %x\n", target_addr);
         }
 
         flash_write_enable(out_spi, cs);
@@ -520,16 +528,28 @@ void write_segment(spi_inst_t * const out_spi, const unsigned int cs, const uint
         flash_write(out_spi, cs, target_addr, data + offset, MIN(len - offset, FLASH_PAGE_SIZE));
         sleep_us(100);
         flash_wait_done(out_spi, cs);
-        printf("flash_write: %x\n", target_addr);
+        //printf("flash_write: %x\n", target_addr);
     }
 }
 
 void reprogram_flash(spi_inst_t * const out_spi, const unsigned int cs)
 {
-    write_segment(out_spi, cs, 0x10e0000, sizeof(psp_nvdata_bin), psp_nvdata_bin);
-    write_segment(out_spi, cs, 0x1100000, sizeof(psp_nvram_bin), psp_nvram_bin);
-    write_segment(out_spi, cs, 0x1060000, sizeof(nvrom_state_bin), nvrom_state_bin);
+    write_segment(out_spi, cs, 0x03e9000, sector_0x03e9000_len, sector_0x03e9000);
+    write_segment(out_spi, cs, 0x0439000, sector_0x0439000_len, sector_0x0439000);
+    write_segment(out_spi, cs, 0x043d000, sector_0x043d000_len, sector_0x043d000);
+    write_segment(out_spi, cs, 0x0443000, sector_0x0443000_len, sector_0x0443000);
+    write_segment(out_spi, cs, 0x0459000, sector_0x0459000_len, sector_0x0459000);
+    write_segment(out_spi, cs, 0x046b000, sector_0x046b000_len, sector_0x046b000);
+    write_segment(out_spi, cs, 0x0475000, sector_0x0475000_len, sector_0x0475000);
+    write_segment(out_spi, cs, 0x0483000, sector_0x0483000_len, sector_0x0483000);
+    write_segment(out_spi, cs, 0x0489000, sector_0x0489000_len, sector_0x0489000);
+    write_segment(out_spi, cs, 0x0552000, sector_0x0552000_len, sector_0x0552000);
+    write_segment(out_spi, cs, 0x055b000, sector_0x055b000_len, sector_0x055b000);
+    write_segment(out_spi, cs, 0x0563000, sector_0x0563000_len, sector_0x0563000);
+    write_segment(out_spi, cs, 0x10b8000, sector_0x10b8000_len, sector_0x10b8000);
+    write_segment(out_spi, cs, 0x1b93000, sector_0x1b93000_len, sector_0x1b93000);
 
+#if 0
     for (uint32_t start = 0x01102000; start  < 0x1100000 + 0x40000; start += FLASH_SECTOR_SIZE) {
         flash_write_enable(out_spi, cs);
         sleep_us(100);
@@ -538,6 +558,7 @@ void reprogram_flash(spi_inst_t * const out_spi, const unsigned int cs)
         flash_wait_done(out_spi, cs);
         printf("flash_erase: %x\n", start);
     }
+#endif
 }
 
 void init_mux()
@@ -568,20 +589,47 @@ void init_lls(const bool lls1_dir, const bool lss2_dir)
     gpio_put(PIN_LLS_2DIR, lss2_dir);
     gpio_set_dir(PIN_LLS_2DIR, GPIO_OUT);
 }
+#endif
 
 void init_spi0_master()
 {
     spi_init(CAPTURE_SPI, 1 * 1000 * 1000);
 
-    gpio_init(PIN_CHIP_SPI_CS);
-    gpio_put(PIN_CHIP_SPI_CS, 1);
-    gpio_set_dir(PIN_CHIP_SPI_CS, GPIO_OUT);
+    gpio_init(PIN_PICO_CHIP_SPI_CS);
+    gpio_set_dir(PIN_PICO_CHIP_SPI_CS, GPIO_OUT);
+    gpio_put(PIN_PICO_CHIP_SPI_CS, 1);
+    sleep_us(10);
+    gpio_put(PIN_PICO_CHIP_SPI_CS, 0);
+    sleep_us(10);
+    gpio_put(PIN_PICO_CHIP_SPI_CS, 1);
 
-    gpio_set_function(PIN_CHIP_SPI_CLK, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_CHIP_MASTER_SPI_RX , GPIO_FUNC_SPI);
-    gpio_set_function(PIN_CHIP_MASTER_SPI_TX , GPIO_FUNC_SPI);
+    gpio_init(PIN_PICO_CHIP_SPI_CLK);
+    gpio_set_dir(PIN_PICO_CHIP_SPI_CLK, GPIO_OUT);
+    gpio_put(PIN_PICO_CHIP_SPI_CLK, 1);
+    sleep_us(10);
+    gpio_put(PIN_PICO_CHIP_SPI_CLK, 0);
+
+    gpio_init(PIN_PICO_CHIP_SPI_RX);
+    gpio_set_dir(PIN_PICO_CHIP_SPI_RX, GPIO_OUT);
+    gpio_put(PIN_PICO_CHIP_SPI_RX, 1);
+    sleep_us(10);
+    gpio_put(PIN_PICO_CHIP_SPI_RX, 0);
+
+    gpio_init(PIN_PICO_CHIP_SPI_TX);
+    gpio_set_dir(PIN_PICO_CHIP_SPI_TX, GPIO_OUT);
+    gpio_put(PIN_PICO_CHIP_SPI_TX, 1);
+    sleep_us(10);
+    gpio_put(PIN_PICO_CHIP_SPI_TX, 0);
+
+    // We can't use the SPI function because then every byte will be send in a
+    // separate CS transaction
+    //gpio_set_function(PIN_PICO_CHIP_SPI_CS, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_PICO_CHIP_SPI_CLK, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_PICO_CHIP_SPI_RX , GPIO_FUNC_SPI);
+    gpio_set_function(PIN_PICO_CHIP_SPI_TX , GPIO_FUNC_SPI);
 }
 
+#if 0
 void init_spi1_interposer()
 {
     spi_init(OUTPUT_SPI, 25 * 1000 * 1000);
@@ -595,6 +643,13 @@ void init_spi1_interposer()
     gpio_set_function(PIN_PICO_BOARD_SPI_RX, GPIO_FUNC_SPI);
 }
 #endif
+
+void gpio_set_highz(uint gpio)
+{
+    gpio_set_function(gpio, GPIO_FUNC_NULL);
+    gpio_disable_pulls(gpio);
+    gpio_set_input_enabled(gpio, false);
+}
 
 int main()
 {
@@ -645,6 +700,11 @@ int main()
                       | (1 << PIN_PICO_BOARD_SPI_MISO_DQ1)
                       //| (1 << PIN_PICO_OUT_SPI_MISO_DQ1)
                       | (1 << PIN_PICO_BOARD_SPI_CS));
+
+    gpio_set_highz(PIN_PICO_CHIP_SPI_RX);
+    gpio_set_highz(PIN_PICO_CHIP_SPI_CS);
+    gpio_set_highz(PIN_PICO_CHIP_SPI_CLK);
+    gpio_set_highz(PIN_PICO_CHIP_SPI_TX);
 
     gpio_set_dir(PIN_PICO_OUT_SPI_MISO_DQ1, true);
     gpio_set_slew_rate(PIN_PICO_OUT_SPI_MISO_DQ1, GPIO_SLEW_RATE_FAST);
@@ -715,28 +775,42 @@ int main()
             interpose_intel();
             break;
         case 'r':
-#if 0
-            init_lls(1, 0);
+            // Disconnect the chip from the board
+            gpio_put(PIN_MUX_INTERPOSE, 1);
+
+            getchar();
+
+            // Configure the spi pins
             init_spi0_master();
-            
+            sleep_us(100);
+
+#if 0
+            flash_write_enable(MASTER_SPI, PIN_PICO_CHIP_SPI_CS);
+            flash_wait_done(MASTER_SPI, PIN_PICO_CHIP_SPI_CS);
             printf("Reprogramming flash sector\n");
-            reprogram_flash(MASTER_SPI, PIN_CHIP_SPI_CS);
+            break;
 #endif
+
+#if 0
+            const uint8_t dummy[] = { 0xCA, 0xFE, 0xBA, 0xBE };
+            write_segment(MASTER_SPI, PIN_PICO_CHIP_SPI_CS, 0x0, sizeof(dummy), dummy);
+#endif
+            printf("Reprogramming flash sector\n");
+            reprogram_flash(MASTER_SPI, PIN_PICO_CHIP_SPI_CS);
+            printf("done\n");
             break;
         case 't':
             printf("Test\n");
-            gpio_put(PIN_N_MUX_EN, 0);
+            //gpio_put(PIN_N_MUX_EN, 0);
             gpio_put(PIN_MUX_INTERPOSE, 0);
 
-            while (true) {
-                gpio_put(PIN_MUX_INTERPOSE, 1);
-                sleep_us(100);
-                gpio_put(PIN_MUX_INTERPOSE, 0);
-                sleep_us(100);
+            while (getchar()) {
+                printf("Toggle\n");
+                gpio_xor_mask((1 << PIN_MUX_INTERPOSE));
             }
             break;
         default: // do nothing just leave chip directly connected
-            gpio_put(PIN_N_MUX_EN, 0);
+            //gpio_put(PIN_N_MUX_EN, 0);
             gpio_put(PIN_MUX_INTERPOSE, 0);
             printf("Just passing traffic through\n");
             break;
