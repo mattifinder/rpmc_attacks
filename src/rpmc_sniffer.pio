@@ -420,13 +420,15 @@ bool increment_listener_init(const unsigned int cs, const unsigned int clk, cons
         printf("Error: Increment listener program could not be loaded/could not claim state machine!\n");
         return false;
     }
-    printf("increment_listener: %u\n", PIO_NUM(increment_listener.pio));
+    PIO pio = increment_listener.pio;
+    uint sm = increment_listener.sm;
+    printf("increment_listener: %u\n", PIO_NUM(pio));
 
-    pio_gpio_init(increment_listener.pio, clk);
+    pio_gpio_init(pio, clk);
     gpio_set_input_hysteresis_enabled(clk, false);
-    pio_gpio_init(increment_listener.pio, mosi);
+    pio_gpio_init(pio, mosi);
     gpio_set_input_hysteresis_enabled(mosi, false);
-    pio_gpio_init(increment_listener.pio, cs);
+    pio_gpio_init(pio, cs);
 
     increment_listener.cfg = increment_listener_program_get_default_config(increment_listener.offset);
 
@@ -444,12 +446,12 @@ bool increment_listener_init(const unsigned int cs, const unsigned int clk, cons
     // normal clock speed
     sm_config_set_clkdiv(&increment_listener.cfg, 1.0f);
 
-    int rc = pio_sm_init(increment_listener.pio, increment_listener.sm, increment_listener.offset + increment_listener_offset_start, &increment_listener.cfg);
+    int rc = pio_sm_init(pio, sm, increment_listener.offset + increment_listener_offset_start, &increment_listener.cfg);
     if (rc < 0) {
         printf("Error: increment listener sm failed to initialize!\n");
         return rc;
     }
-    pio_sm_set_enabled(increment_listener.pio, increment_listener.sm, true);
+    pio_sm_set_enabled(pio, sm, true);
 
     return true;
 }
