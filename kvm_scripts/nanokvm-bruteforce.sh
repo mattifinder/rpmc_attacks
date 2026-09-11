@@ -5,7 +5,9 @@ FIFO_FILE="$(mktemp -d)"/commands.fifo
 KVM_API="https://localhost:8080/api"
 
 mkfifo "$FIFO_FILE"
-ssh sect-nanokvm /bin/sh <"$FIFO_FILE" &
+echo "$FIFO_FILE"
+ssh sect-nanokvm /bin/sh <"$FIFO_FILE"
+exit 0
 
 token="$(
 	curl -sSk "$KVM_API/auth/login" \
