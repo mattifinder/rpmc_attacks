@@ -684,8 +684,12 @@ int main()
             interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_OUT_SPI_MISO_DQ1, PIN_MUX_INTERPOSE);
 #endif
             increment_listener_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
-            
+
+            printf("c0 = %08x\n", counter_values[0]);
+            printf("c1 = %08x\n", counter_values[1]);
+
             printf("Interposing Intel\n");
+
             //multicore_launch_core1(interpose_intel_core1);
             interpose_intel();
             break;
