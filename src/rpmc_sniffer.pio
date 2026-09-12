@@ -289,42 +289,31 @@ struct pio_metadata {
     unsigned int sm;
     unsigned int offset;
     pio_sm_config cfg;
+    const pio_program_t * prog;
+    bool inited;
 };
 
 
-static bool rpmc_sniffer_inited = false;
-static struct pio_metadata rpmc_sniffer_inst;
+static struct pio_metadata rpmc_sniffer_inst = { .prog = &rpmc_sniffer_program, .inited = false};;
+static struct pio_metadata interposer_inst = { .prog = &spi_slave_program, .inited = false};
+static struct pio_metadata increment_listener = { .prog = &increment_listener_program, .inited = false};;
+
 // TODO: remove
 static int pin_setter_sm;
 
-static bool interposer_inited = false;
-static struct pio_metadata interposer_inst;
-
-static struct pio_metadata increment_listener;
-
-void deinit(struct pio_metadata * inst, const pio_program_t * prog)
+void deinit(struct pio_metadata * inst)
 {
     pio_sm_set_enabled(inst->pio, inst->sm, false);
-    pio_remove_program(inst->pio, prog, inst->offset);
+    pio_remove_program(inst->pio, inst->prog, inst->offset);
     pio_sm_unclaim(inst->pio, inst->sm);
 }
 
-
-static void rpmc_sniffer_cleanup() {
-
-    if (rpmc_sniffer_inited) {
-        deinit(&rpmc_sniffer_inst, &rpmc_sniffer_program);
-        rpmc_sniffer_inited = false;
-    }
-}
+// TODO: deinit automatically when inited already
 
 static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
-
-    rpmc_sniffer_cleanup();
-
     // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
     //       for irq prev/next
-    if (!pio_claim_free_sm_and_add_program(&rpmc_sniffer_program, &rpmc_sniffer_inst.pio, &rpmc_sniffer_inst.sm, &rpmc_sniffer_inst.offset)) {
+    if (!pio_claim_free_sm_and_add_program(rpmc_sniffer_inst.prog, &rpmc_sniffer_inst.pio, &rpmc_sniffer_inst.sm, &rpmc_sniffer_inst.offset)) {
         printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
         return false;
     }
@@ -359,7 +348,6 @@ static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, cons
     }
     pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
 
-    rpmc_sniffer_inited = true;
     // success
     return true;
 }
@@ -368,7 +356,7 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int m
 {
     // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
     //       for irq prev/next
-    if (!pio_claim_free_sm_and_add_program(&spi_slave_program, &interposer_inst.pio, &interposer_inst.sm, &interposer_inst.offset)) {
+    if (!pio_claim_free_sm_and_add_program(interposer_inst.prog, &interposer_inst.pio, &interposer_inst.sm, &interposer_inst.offset)) {
         printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
         return false;
     }
@@ -417,13 +405,13 @@ bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int m
     }
     pio_sm_set_enabled(interposer_inst.pio, interposer_inst.sm, true);
 
-    interposer_inited = true;
+    return true;
 }
 
 bool increment_listener_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi)
 {
     // TODO: switch to pio_add_program. Does THIRD_PIO exist?
-    if (!pio_claim_free_sm_and_add_program(&increment_listener_program, &increment_listener.pio, &increment_listener.sm, &increment_listener.offset)) {
+    if (!pio_claim_free_sm_and_add_program(increment_listener.prog, &increment_listener.pio, &increment_listener.sm, &increment_listener.offset)) {
         printf("Error: Increment listener program could not be loaded/could not claim state machine!\n");
         return false;
     }

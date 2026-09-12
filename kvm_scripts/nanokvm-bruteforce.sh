@@ -1,12 +1,17 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -xe
+
+cd "$(dirname "$(realpath "$0")")"
 
 FIFO_FILE="$(mktemp -d)"/commands.fifo
 KVM_API="https://localhost:8080/api"
 
 mkfifo "$FIFO_FILE"
 echo "$FIFO_FILE"
-ssh sect-nanokvm /bin/sh <"$FIFO_FILE"
+ssh sect-nanokvm /bin/sh <"$FIFO_FILE" &
+#cat "$FIFO_FILE" | tee >(sed 's/^/$ /')
+python3 nanokvm-bruteforce.py "$FIFO_FILE"
+
 exit 0
 
 token="$(

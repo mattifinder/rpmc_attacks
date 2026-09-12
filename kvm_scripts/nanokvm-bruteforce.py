@@ -212,54 +212,59 @@ def timing():
 
     restart()
 
+def press(script):
+    script = "/root/press-" + script + "\n"
+    print("$ " + script, end='')
+    kvm_fifo.write(script)
+    time.sleep(0.2)
+
 def intel():
     global curr_pin
     global kvm_fifo
 
-    #kvm_fifo.write("/etc/init.d/S03usbdev restart_phy\n")
-    #time.sleep(2)
+    option = "n"
+    while option == "n":
+        #kvm_fifo.write("/etc/init.d/S03usbdev restart_phy\n")
+        #time.sleep(3)
+
+        press(f"number 0")
+        print("do you see this? [Yn]")
+        option = input()
+        press("backspace")
 
     print(f"entering PIN {curr_pin}", file=sys.stderr)
     for c in str(curr_pin):
-        kvm_fifo.write(f"/root/press-number.sh {c}\n")
-        time.sleep(0.1)
+        press(f"number {c}")
+    press("return")
+    # first pin takes a bit longer
+    time.sleep(1)
     curr_pin += 1
 
     for _ in range(31):
-        if (curr_pin == 123457):
-            exit(0)
-
         print(f"entering PIN {curr_pin}", file=sys.stderr)
         if curr_pin % 100 == 0:
-            kvm_fifo.write("/root/press-backspace.sh\n")
-            time.sleep(0.05)
-            kvm_fifo.write("/root/press-backspace.sh\n")
-            time.sleep(0.05)
-            kvm_fifo.write("/root/press-backspace.sh\n")
-            time.sleep(0.05)
-            kvm_fifo.write(f"/root/press-number.sh {curr_pin % 1000}\n")
-            time.sleep(0.05)
-            kvm_fifo.write(f"/root/press-number.sh {curr_pin % 100}\n")
-            time.sleep(0.05)
-            kvm_fifo.write(f"/root/press-number.sh {curr_pin % 10}\n")
-            time.sleep(0.05)
-        elif curr_pin % 10 == 0:
-            kvm_fifo.write("/root/press-backspace.sh\n")
-            time.sleep(0.05)
-            kvm_fifo.write("/root/press-backspace.sh\n")
-            time.sleep(0.05)
-            kvm_fifo.write(f"/root/press-number.sh {curr_pin % 100}\n")
-            time.sleep(0.05)
-            kvm_fifo.write(f"/root/press-number.sh {curr_pin % 10}\n")
-            time.sleep(0.05)
-        else:
-            kvm_fifo.write("/root/press-backspace.sh\n")
-            time.sleep(0.05)
-            kvm_fifo.write(f"/root/press-number.sh {curr_pin % 10}\n")
-            time.sleep(0.05)
+            press("backspace")
+            press("backspace")
+            press("backspace")
+            press(f"number {(curr_pin % 1000) // 100}")
+            press("number 0")
+            press("number 0")
 
-        kvm_fifo.write("/root/press-return.sh\n")
-        time.sleep(0.1)
+        elif curr_pin % 10 == 0:
+            press("backspace")
+            press("backspace")
+            press(f"number {(curr_pin % 100) // 10}")
+            press("number 0")
+        else:
+            press("backspace")
+            press(f"number {curr_pin % 10}")
+
+        press("return")
+        time.sleep(0.5)
+
+        if (curr_pin == 123457):
+            print("done")
+            exit(0)
 
         curr_pin += 1
 
@@ -281,8 +286,20 @@ def main(args):
         delta = int(args[1])
 
     while True:
+        print("Turn on intel interposer")
+        input()
+        print("turning on target")
+        press("powerbutton")
+        print("replug the keyboard")
+        print("press enter to start pin entry")
         input()
         intel()
+        print("press enter here when done flashing")
+        input()
+        press("powerbutton")
+        #press("ctrlaltentf")
+        # TODO: use kvm to turn on board again
+
         # line = b''
         # for i in range(len(READABLE_LINES)):
         #     line = sys.stdin.buffer.readline()

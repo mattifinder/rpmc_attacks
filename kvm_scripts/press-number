@@ -1,0 +1,8 @@
+#!/bin/sh
+
+[ $# -gt 0 ] || exit 1
+
+printf "\x00\x00\x$(printf "%x" $((0x1D + $1 + !$1 * 10)))\x00\x00\x00\x00\x00" >/dev/hidg0
+sleep 0.1
+printf '\x00\x00\x00\x00\x00\x00\x00\x00' >/dev/hidg0
+sleep 0.1
