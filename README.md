@@ -12,7 +12,7 @@ The `kvm_scripts` directory contains the scripts we used on for our nano kvm to 
 `src` houses the firmware code for the pico, better explained in the next section.
 The `interposer-pcb` directory contains the kicad project for the interposer pcb.
 
-## Subprojects
+## Building
 
 Build all subprojects with:
 
@@ -39,14 +39,25 @@ picotool load -f <subproject>.elf
 This project is used to increment a counter to a value of *UINT32\_MAX* hopefully allowing for an overflow back to 0.
 Alternatively `pocs/counter_overflow.py` can be used as well. 
 
-### serprog\_glitch.elf
+### serprog\_glitch.elf & glitch\_finder.elf
 
 This project allows for quicker voltage glitching iteration by receiving the delay used in the voltage glitch via serial.
 It is meant to be used in conjuctions with some of the scripts found in the `pocs` directory.
 
-### glitch\_finder.elf
+*Gltich\_finder* is very similar to *serprog\_glitch* but useful for quickly iterating through different values for the MOSFET open delay for testing and parameter finding.
 
-Very similar to serprog\_glitch but useful for quickly iterating through different values for the MOSFET open delay for testing.
+#### Finding Working Parameters
+
+Our values for the delay functions should only be used as a reference.
+Even for us the parameters always seem to change slightly when reusing the setup a couple months later.
+To reliably find the parameters, we recommend using a logic analyzer to observe the PIN controlling the MOSFET, the voltag rail, and the SPI transmission lines and then trying values that come close to the absolute times specified in the paper.
+
+The lines in the source code that most likely will need to be adjusted are found in `src/serprog\_with\_glitch.c` and `pocs/voltage\_glitching.py`.
+Just look for *glitch\_cycles* or *delay*.
+
+If that doesn't work, the next option is iterating through the whole search space to find values where the target starts to behave weirdly.
+Once found iterations on the setup should be performed, to e.g. reduce the resistance on the crowbar circuit.
+This is especially necessary if attempting to glitch a chip stil soldered onto a laptop mainboard.
 
 ### interposer.elf
 
@@ -89,13 +100,4 @@ This tool provides an option to also set the SPI speed to a desired value; in ou
 
 ```
 ifdtool -s 17 -p <platform> -O <outimage> <inimage>
-```
-
-## Building
-
-```sh
-mkdir build
-cd build
-cmake ..
-make -j
 ```

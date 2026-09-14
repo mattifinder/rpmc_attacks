@@ -222,7 +222,7 @@ void process(spi_inst_t * spi, int command) {
     }
 }
 
-void __attribute__((optimize("O0"), noinline)) __time_critical_func(wait_delay)(const size_t delay)
+static void __time_critical_func(wait_delay)(const size_t delay)
 {
     switch (delay)
     {
@@ -371,7 +371,7 @@ int main() {
     gpio_init(PIN_DIR_B);
     gpio_put(PIN_DIR_B, 0);
     gpio_set_dir(PIN_DIR_B, GPIO_OUT);
-    
+
     // configure 1V8 output manually is active low
     gpio_init(PIN_1V8_OE);
     gpio_pull_up(PIN_1V8_OE);
