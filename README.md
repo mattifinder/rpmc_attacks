@@ -1,16 +1,20 @@
 # RPMC Attacks
 
 This repository contains code useful for attacking RPMC-capable SPI flash chips.
+It mostly serves supplemental material for the a publication titled ["Hello Again: Exploiting Replay Protected Monotonic Counters to Brute-Force Windows Hello PINs"](https://doi.org/10.1145/3830454.3846631) published in ACM CCS 2026.
 
 It enables the use of different glitches on a target flash chip and exploiting controller vulnerabilities.
-These consist of overflowing a counter, some voltage glitching attacks to leak hmac keys, and a full interposer for amd and intel.
+These consist of overflowing a counter, some voltage glitching attacks to leak hmac keys, and a full interposer for AMD and Intel.
 
-Projects are tested on the **pico 2 W**.
+Projects are tested on the **pico 2 (W)**.
 
-The `pocs` directory contains the python scripts we used to test some of our attacks.
-The `kvm_scripts` directory contains the scripts we used on for our nano kvm to film the demo video and test the full end-to-end pin brute force.
-`src` houses the firmware code for the pico, better explained in the next section.
-The `interposer-pcb` directory contains the kicad project for the interposer pcb.
+## Structure
+
+- `pocs` contains the python scripts we used to test some of our attacks
+- `kvm_scripts` contains the scripts we used for our nano kvm to film the demo video and test the full end-to-end pin brute force
+- `src` houses the firmware code for the pico, better explained in the "Building" section
+- `interposer` contains the kicad project for the different interposer pcbs
+- `traces` contains some addition trace, more information in section "Traces \& Supplemental Videos"
 
 ## Building
 
@@ -101,3 +105,11 @@ This tool provides an option to also set the SPI speed to a desired value; in ou
 ```
 ifdtool -s 17 -p <platform> -O <outimage> <inimage>
 ```
+
+## Traces \& Supplemental Videos
+
+The traces were captured using a Saleae Logic Pro 16 and can be viewed using [Logic2](https://www.saleae.com/downloads).
+They show for both AMD and Intel, one boot and also the behaviour when entering a wrong PIN i.e. an fTPM state change.
+
+Proof of concept videos can be found on YouTube.
+For [AMD](https://youtu.be/Yq2Wa-nj68g) we brute-forced Windows Hello pins and for [Intel](https://youtu.be/MnplktYLMJw) we targetted the Bitlocker + PIN entry. 
