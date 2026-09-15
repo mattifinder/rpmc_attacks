@@ -46,27 +46,27 @@ Alternatively `pocs/counter_overflow.py` can be used as well.
 ### serprog\_glitch.elf & glitch\_finder.elf
 
 This project allows for quicker voltage glitching iteration by receiving the delay used in the voltage glitch via serial.
-It is meant to be used in conjuctions with some of the scripts found in the `pocs` directory.
+It is meant to be used in conjunction with some of the scripts found in the `pocs` directory.
 
-*Gltich\_finder* is very similar to *serprog\_glitch* but useful for quickly iterating through different values for the MOSFET open delay for testing and parameter finding.
+*Glitch\_finder* is very similar to *serprog\_glitch* but useful for quickly iterating through different values for the MOSFET open delay for testing and parameter finding.
 
 #### Finding Working Parameters
 
 Our values for the delay functions should only be used as a reference.
 Even for us the parameters always seem to change slightly when reusing the setup a couple months later.
-To reliably find the parameters, we recommend using a logic analyzer to observe the PIN controlling the MOSFET, the voltag rail, and the SPI transmission lines and then trying values that come close to the absolute times specified in the paper.
+To reliably find the parameters, we recommend using a logic analyzer to observe the PIN controlling the MOSFET, the voltage rail, and the SPI transmission lines and then trying values that come close to the absolute times specified in the paper.
 
-The lines in the source code that most likely will need to be adjusted are found in `src/serprog\_with\_glitch.c` and `pocs/voltage\_glitching.py`.
+The lines in the source code that most likely will need to be adjusted are found in `src/serprog_with_glitch.c` and `pocs/voltage_glitching.py`.
 Just look for *glitch\_cycles* or *delay*.
 
 If that doesn't work, the next option is iterating through the whole search space to find values where the target starts to behave weirdly.
 Once found iterations on the setup should be performed, to e.g. reduce the resistance on the crowbar circuit.
-This is especially necessary if attempting to glitch a chip stil soldered onto a laptop mainboard.
+This is especially necessary if attempting to glitch a chip still soldered onto a laptop mainboard.
 
 ### interposer.elf
 
 Interposer used to mount the attacks against our target systems.
-To set the specific mode you have to open a tty to the pico (`picocom -b 115200 -q /dev/\<your tty\>`) and then enter the corresponding letter:
+To set the specific mode you have to open a tty to the pico (`picocom -b 115200 -q /dev/<your tty>`) and then enter the corresponding letter:
 
 - a for amd interposing
 - r for writing an old spi state
@@ -78,21 +78,21 @@ For automating our attack path, we included logic to rollback the necessary flas
 Rollbacking the whole flash is also possible, but inefficient, though this is a good first test to see if everything works.
 To find them we looked for the sections that changed and extracted them using [psptool](https://github.com/pspreverse/psptool) and then converting them to header format using `xxd -i`.
 In our case these were the sections *PSP\_NVRAM* (0x1100000 size 0x40000), *PSP\_NV\_DATA* (0x10e0000 size 0x20000), and *ROM\_ARMOR\_BIOS\_NVSTORE* (x1060000 size 0x40000).
-Because these large files fill up the picos storage, we needed to perform some optimization on one of them to remove trailing 0xff and then implement the clearing of these bytes in another loop (see `reprogram\_flash()`).
+Because these large files fill up the picos storage, we needed to perform some optimization on one of them to remove trailing 0xff and then implement the clearing of these bytes in another loop (see `reprogram_flash()`).
 All these values need to be put in the `include/psp_nvdata.h` file.
 
 #### Reducing SPI Speed
 
 Because of signal integrity issues when using our interposer, we sadly couldn't perform the attacks while the laptops were using the full 80-100 MHz Quad SPI bandwidth available with these chips.
-Luckily, we found ways on both Intel and AMD the SPI bus speed.
-While on Intel, this configuration is not crytographically protected at all, AMD systems required replaying an AMD-signed configuration block from another system.
+Luckily, we found ways on both Intel and AMD to lower the SPI bus speed.
+While on Intel, this configuration is not cryptographically protected at all, AMD systems required replaying an AMD-signed configuration block from another system.
 
 ##### AMD
 
-We found that the SPI clock speed of certain SPI transactions can be lowered by changing the *SpiRomConfig* blob (part of the PSP firwmare blobs).
+We found that the SPI clock speed of certain SPI transactions can be lowered by changing the *SpiRomConfig* blob (part of the PSP firmware blobs).
 While this configuration is signed by AMD, we found versions of it in the public coreboot project that are signed by the same key that our target's firmware expects (<https://github.com/coreboot/amd_blobs/tree/main/mendocino/PSP>).
 More so, they contain versions of this config that are named after the SPI transmission method (Normal/Dual SPI) and frequency (16, 33, 66).
-By replacing the existing *SpiRomConfig* blob with the *TypeId0x5C\_SpiRomConfig\_MDN\_Normal16.sbin* version from coreboot, we succesffully lowered the SPI transaction speed.
+By replacing the existing *SpiRomConfig* blob with the *TypeId0x5C\_SpiRomConfig\_MDN\_Normal16.sbin* version from coreboot, we successfully lowered the SPI transaction speed.
 While this noticeably increases boot time, it enabled our interposition using the low-cost hardware introduced in the paper.
 
 ##### Intel
