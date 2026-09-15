@@ -48,8 +48,6 @@ bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is target, 1 is pico
 #define PIN_PICO_CHIP_SPI_CLK 34
 #define PIN_PICO_CHIP_SPI_TX 35
 
-#define PIN_TARGET_POWER_SWITCH 39
-
 #define HMAC_KEY_SIZE 32
 
 void error(const char * msg)
@@ -695,17 +693,6 @@ int main()
     //gpio_set_drive_strength(PIN_PICO_BOARD_SPI_MISO_DQ1, GPIO_DRIVE_STRENGTH_12MA);
     //gpio_set_dir_out_masked64((1 << PIN_PICO_OUT_SPI_MISO_DQ1));
 
-#ifdef PIN_PICO_DEBUG_PIN
-    gpio_init(PIN_PICO_DEBUG_PIN);
-    gpio_set_dir(PIN_PICO_DEBUG_PIN, true);
-    gpio_set_slew_rate(PIN_PICO_DEBUG_PIN, GPIO_SLEW_RATE_FAST);
-#endif
-
-#if 0
-    gpio_init(PIN_TARGET_POWER_SWITCH);
-    gpio_set_dir(PIN_PICO_DEBUG_PIN, GPIO_OUT);
-#endif
-
     // toggle the mux pin once so that we can see that the pcbite sits correctly
     // probe the mux
     gpio_put(PIN_MUX_INTERPOSE, 0);
@@ -718,12 +705,6 @@ int main()
     }
     sleep_us(100);
     gpio_put(PIN_MUX_INTERPOSE, 0);
-
-#ifdef PIN_PICO_DEBUG_PIN
-    gpio_put(PIN_PICO_DEBUG_PIN, 1);
-    sleep_us(100);
-    gpio_put(PIN_PICO_DEBUG_PIN, 0);
-#endif
 
     // Overclock
     set_sys_clock_khz(250000, true);
@@ -750,19 +731,11 @@ switch_case:
 #endif
             break;
         case 'i':
-interpose_intel_case:
-            printf("Press a key once board is off\n");
-            getchar();
-
             // turn off mux
             gpio_put(PIN_MUX_INTERPOSE, 0);
 
             rpmc_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
-#ifdef PIN_PICO_DEBUG_PIN
-            interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_DEBUG_PIN, PIN_MUX_INTERPOSE);
-#else
             interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_OUT_SPI_MISO_DQ1, PIN_MUX_INTERPOSE);
-#endif
             increment_listener_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
 
             printf("c0 = %08x\n", counter_values[0]);
@@ -805,10 +778,8 @@ interpose_intel_case:
             gpio_set_highz(PIN_PICO_CHIP_SPI_CS);
             gpio_set_highz(PIN_PICO_CHIP_SPI_CLK);
             gpio_set_highz(PIN_PICO_CHIP_SPI_TX);
-
-            // restart
-            goto interpose_intel_case;
             break;
+
         case 't':
             printf("Test\n");
             //gpio_put(PIN_N_MUX_EN, 0);
@@ -819,13 +790,13 @@ interpose_intel_case:
                 gpio_xor_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_CHIP_VOLT_SEL));
             }
             break;
+
         default: // do nothing just leave chip directly connected
             //gpio_put(PIN_N_MUX_EN, 0);
             gpio_put(PIN_MUX_INTERPOSE, 0);
             printf("Just passing traffic through\n");
             break;
     }
-    goto switch_case;
 
     while (true)
         tight_loop_contents();

@@ -10,10 +10,12 @@ mkfifo "$FIFO_FILE"
 echo "$FIFO_FILE"
 ssh sect-nanokvm /bin/sh <"$FIFO_FILE" &
 #cat "$FIFO_FILE" | tee >(sed 's/^/$ /')
-python3 nanokvm-bruteforce.py "$FIFO_FILE"
+./nanokvm-bruteforce.py "$FIFO_FILE"
 
 exit 0
 
+# TODO: fix this for ocr but don't break for bitlocker where we still have
+#       manual input
 token="$(
 	curl -sSk "$KVM_API/auth/login" \
 	     -X POST \
