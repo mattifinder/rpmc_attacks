@@ -108,7 +108,6 @@ void __time_critical_func(rpmc_interpose_increment_core1)(void)
 }
 #endif
 
-static const uint32_t rollback_values[] = {0xCF6, 0xCD4};
 static uint32_t counter_values[] = {0xCF6, 0xCD4};
 // Keys for key_data 01000000
 #define USE_KEYS_FRAMEWORK_2
@@ -359,11 +358,6 @@ void interpose_intel()
             // fill the FIFO with a busy wait message again
             pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
             pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, WAIT);
-
-            if (inc.idx == 1 && counter_values[1] >= rollback_values[1] + 37) {
-                // we tried 32 pins, lockout counter is full
-                return;
-            }
         }
     }
 
@@ -778,19 +772,8 @@ interpose_intel_case:
             printf("Turn on target now\n");
 
             interpose_intel();
+            break;
 
-            // reset counter values
-            counter_values[0] = rollback_values[0];
-            counter_values[1] = rollback_values[1];
-
-            // TODO: one could probably leave these running after adjusting
-            //   some things but this less work for me right now
-            // tear down SMs
-            deinit(&rpmc_sniffer_inst);
-            deinit(&interposer_inst);
-            deinit(&increment_listener);
-
-            // intentional fallthrough
         case 'r':
             // Disconnect the chip from the board
             gpio_put(PIN_MUX_INTERPOSE, 1);
