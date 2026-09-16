@@ -1,29 +1,32 @@
 .program request_sniffer
 
-; TODO: this is not accurate anymore
-; SPI Sniffer
-; When triggered, by a 32-bit value BITCOUNT in the TX fifo, this program
-; will wait for CS to go low and then sniff the next BITCOUNT bits from
-; MOSI. These are pushed to the RX fifo as multiples of 32-bits.
+; RPMC Request Sniffer
 ;
-; FIFOs:
-; - TX holds 32-bit BITCOUNT values (autopull is enabled).
-; - RX transfers the sniffed bits (in 32-bit chunks) (autopush is enabled).
-; Pin mapping:
-; - in pins: 0 is SPI MOSI (gpio 3)
-; - uses gpio pins 2 (SPI CLK)
-; - JMPPIN is SPI CS (5)
+; This program will wait until it sees an RPMC Request command, sniff all of its
+; bits and then notify the interposer SM.
+;
+; Expected pin mapping:
+; - IN pin is SPI_MOSI
+; - JMPPIN is SPI_CS
+; - gpio 2 is SPI_CLK
 
+; IN pin should be MOSI
+.in 1 left auto 32
+; No OUT pin. Disable autopull since pull only the match bits once
+.out 0 left 32
+
+; Expects PIN_PICO_BOARD_SPI_CLK to be 2
 .define CLK 2
 
 public start:
-    ; because we move the bits back into osr after consuming them, we get away
-    ; with doing this only once
+    ; Pull manually because autopull is disabled. Because we move the bits back
+    ; into OSR after consuming them, we get away with doing this only once at
+    ; the very beginning
     pull
 
 .wrap_target
 listen_for_match_bits:
-    ; load bits to match into y
+    ; load bits to match (i.e. OP1 + Request command type) into Y
     out y, 32
 
     ; Since we will have to overwrite register Y later to store something else
@@ -35,14 +38,16 @@ listen_for_match_bits:
     mov osr, y
 
 match_loop:
-    set x, 15                ; number of bits to match
+    ; match 16 bits
+    set x, 15
+    ; reset ISR used in the bitloop
     mov isr, null
 
     ; wait for falling chip select edge
     wait 1 JMPPIN
     wait 0 JMPPIN
 
-    ; sample the bits to match into x on every rising clock edge
+    ; sample the bits to match on every rising clock edge
 bitloop:
     wait 1 gpio CLK
     in pins, 1
@@ -51,9 +56,9 @@ bitloop:
     jmp x--, bitloop
 bitloop_end:
 
-    ; compare read bits
-    mov x, isr              ; move bits read to x
-    jmp x!=y, match_loop    ; continue if bits don't match
+    ; compare read bits and restart if they don't match
+    mov x, isr
+    jmp x!=y, match_loop
 match_success:
 
     ; A request command is 48 bytes long, but we're not interested in the 32
@@ -61,13 +66,12 @@ match_success:
     ; we're still missing 14*8 bits. since we can't set immediate values larger
     ; than 31, we have to use two counters for an outer loop and an inner one.
     ; 14*8/16 = 7
-    ; NOTE: make sure the pico is fast enough for this (overclocking might be
-    ;       necessary)
     set y, 6
 outerloop:
     set x, 15
 innerloop:
     wait 1 gpio CLK
+    ; Push the command bits out (via autopush)
     in pins, 1
     wait 0 gpio CLK
     jmp x--, innerloop
@@ -75,57 +79,49 @@ innerloop_end:
     jmp y--, outerloop
 outerloop_end:
 
-    ; notify the second state machine that it can start looking for OP2
+    ; notify the interposer state machine that it can start looking for OP2
     irq prev clear 4
 
     ; jump back to listen_for_match_bits
 .wrap
 
+
 % c-sdk {
 
 #include "helper.h"
 
-static struct pio_metadata request_sniffer = { .prog = &request_sniffer_program, .inited = false};;
+static struct pio_metadata request_sniffer = { .prog = &request_sniffer_program, .inited = false};
 
 static int request_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
     // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
     //       for irq prev/next
     if (!pio_claim_free_sm_and_add_program(request_sniffer.prog, &request_sniffer.pio, &request_sniffer.sm, &request_sniffer.offset)) {
-        printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
+        printf("Error: Request sniffer program could not be loaded\n");
         return false;
     }
-    printf("request_sniffer: %u\n", PIO_NUM(request_sniffer.pio));
+    PIO pio = request_sniffer.pio;
+    uint sm = request_sniffer.sm;
+    printf("request_sniffer: %u\n", PIO_NUM(pio));
 
-    pio_gpio_init(request_sniffer.pio, clk);
+    pio_gpio_init(pio, clk);
     gpio_set_input_hysteresis_enabled(clk, false);
-    pio_gpio_init(request_sniffer.pio, mosi);
+    pio_gpio_init(pio, mosi);
     gpio_set_input_hysteresis_enabled(mosi, false);
-    pio_gpio_init(request_sniffer.pio, cs);
+    pio_gpio_init(pio, cs);
 
     request_sniffer.cfg = request_sniffer_program_get_default_config(request_sniffer.offset);
+    pio_sm_config *cfg = &request_sniffer.cfg;
 
-    // io mapping (inputs 0:svd)
-    sm_config_set_in_pins(&request_sniffer.cfg, mosi);
-    sm_config_set_in_pin_count(&request_sniffer.cfg, 1);
+    sm_config_set_in_pin_base(cfg, mosi);
+    sm_config_set_jmp_pin(cfg, cs);
 
-    // shifts are msb-first 32-bits, enable autopush but disable autopull
-    sm_config_set_in_shift(&request_sniffer.cfg, false, true, 32);
-    sm_config_set_out_shift(&request_sniffer.cfg, false, false, 32);
-
-    // setup cs as jump pins
-    sm_config_set_jmp_pin(&request_sniffer.cfg, cs);
-
-    // 125 MHz
-    sm_config_set_clkdiv(&request_sniffer.cfg, 1.0f);
-
-    int rc = pio_sm_init(request_sniffer.pio, request_sniffer.sm, request_sniffer.offset + request_sniffer_offset_start, &request_sniffer.cfg);
+    int rc = pio_sm_init(pio, sm, request_sniffer.offset + request_sniffer_offset_start, cfg);
     if (rc < 0) {
-        printf("Error: spi sniff sm failed to initialize!\n");
+        printf("Error: Request sniffer SM failed to initialize\n");
         return rc;
     }
-    pio_sm_set_enabled(request_sniffer.pio, request_sniffer.sm, true);
+    pio_sm_set_enabled(pio, sm, true);
 
-    // success
     return true;
 }
 
