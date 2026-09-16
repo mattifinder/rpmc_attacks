@@ -120,31 +120,31 @@ void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t coun
 void interpose_intel()
 {
     // tell the first SM to match RPMC request commands
-    pio_sm_put_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, 0x9B03);
+    pio_sm_put_blocking(request_sniffer.pio, request_sniffer.sm, 0x9B03);
 
     // tell the second SM to match OP2
     // TODO: explain the shifts (to gain one more clock cycle of time and
     //       because the PIO discars the LSB due to autopull issues)
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, ((0x96 >> 1) << 1));
+    pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, ((0x96 >> 1) << 1));
     // pre-fill the FIFO with a busy wait message
-    pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-    pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, WAIT);
+    pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
+    pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, WAIT);
 
     // tell the third SM to match RPMC increment commands
-    pio_sm_put_blocking(increment_listener.pio, increment_listener.sm, 0x9B02);
+    pio_sm_put_blocking(increment_sniffer.pio, increment_sniffer.sm, 0x9B02);
 
     unsigned n_req = 1;
     unsigned n_inc = 1;
 
     // TODO: do this via the pis_smX_rx_fifo_not_empty interrupts
     while (true) {
-        if (!pio_sm_is_rx_fifo_empty(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm)) {
+        if (!pio_sm_is_rx_fifo_empty(request_sniffer.pio, request_sniffer.sm)) {
             union rpmc_request req;
             union rpmc_read_data status = { .status = DONE };
 
             // get the request command
             for (unsigned i = 0; i < count_of(req.words); ++i)
-                req.words[i] = pio_sm_get_blocking(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm);
+                req.words[i] = pio_sm_get_blocking(request_sniffer.pio, request_sniffer.sm);
 
             // at this point we already sent the pre-filled busy message, so we
             // don't need to worry about that here
@@ -178,18 +178,18 @@ void interpose_intel()
 #endif
 
             // send a short ready message
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, DONE);
+            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
+            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, DONE);
 
             // send the long status
-            interposer_send(interposer_inst.pio, interposer_inst.sm, status.buf, sizeof(status.buf));
+            interposer_send(read_interposer.pio, read_interposer.sm, status.buf, sizeof(status.buf));
 
             // tell the SM to wait for the next request
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 1 << 31);
+            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, 1 << 31);
 
             // fill the FIFO with a busy wait message again
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, WAIT);
+            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
+            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, WAIT);
 
 #if 0
             printf("request %d:\n"
@@ -199,12 +199,12 @@ void interpose_intel()
             //printf("\top1: %02x\n", req.op1);
             //printf("\ttyp: %02x\n", req.typ);
 #endif
-        } else if (!pio_sm_is_rx_fifo_empty(increment_listener.pio, increment_listener.sm)) {
+        } else if (!pio_sm_is_rx_fifo_empty(increment_sniffer.pio, increment_sniffer.sm)) {
             union rpmc_increment inc;
 
             // get the increment command
             for (unsigned i = 0; i < count_of(inc.words); ++i)
-                inc.words[i] = pio_sm_get_blocking(increment_listener.pio, increment_listener.sm);
+                inc.words[i] = pio_sm_get_blocking(increment_sniffer.pio, increment_sniffer.sm);
 
             // at this point we already sent the pre-filled busy message, so we
             // don't need to worry about that here
@@ -227,19 +227,19 @@ void interpose_intel()
             counter_values[inc.idx]++;
 
             // send a short ready message
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, DONE);
+            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
+            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, DONE);
 
             // send a short ready message
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, DONE);
+            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
+            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, DONE);
 
             // tell the SM to wait for the next request
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, 1 << 31);
+            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, 1 << 31);
 
             // fill the FIFO with a busy wait message again
-            pio_sm_put_blocking(interposer_inst.pio, interposer_inst.sm, (8 - 1));
-            pio_sm_put_byte_blocking(interposer_inst.pio, interposer_inst.sm, WAIT);
+            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
+            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, WAIT);
         }
     }
 }
@@ -468,9 +468,9 @@ switch_case:
             gpio_put(PIN_MUX_INTERPOSE, MUX_TARGET_CHIP);
 
             // Init all PIO state machines
-            rpmc_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
-            interposer_pio_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_OUT_SPI_MISO_DQ1, PIN_MUX_INTERPOSE);
-            increment_listener_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
+            request_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
+            read_interposer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0, PIN_PICO_OUT_SPI_MISO_DQ1, PIN_MUX_INTERPOSE);
+            increment_sniffer_init(PIN_PICO_BOARD_SPI_CS, PIN_PICO_BOARD_SPI_CLK, PIN_PICO_BOARD_SPI_MOSI_DQ0);
 
             printf("c0 = %08x\n", counter_values[0]);
             printf("c1 = %08x\n", counter_values[1]);

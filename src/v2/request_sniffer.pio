@@ -1,4 +1,4 @@
-.program rpmc_sniffer
+.program request_sniffer
 
 ; TODO: this is not accurate anymore
 ; SPI Sniffer
@@ -85,45 +85,45 @@ outerloop_end:
 
 #include "helper.h"
 
-static struct pio_metadata rpmc_sniffer_inst = { .prog = &rpmc_sniffer_program, .inited = false};;
+static struct pio_metadata request_sniffer = { .prog = &request_sniffer_program, .inited = false};;
 
-static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
+static int request_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
     // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
     //       for irq prev/next
-    if (!pio_claim_free_sm_and_add_program(rpmc_sniffer_inst.prog, &rpmc_sniffer_inst.pio, &rpmc_sniffer_inst.sm, &rpmc_sniffer_inst.offset)) {
+    if (!pio_claim_free_sm_and_add_program(request_sniffer.prog, &request_sniffer.pio, &request_sniffer.sm, &request_sniffer.offset)) {
         printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
         return false;
     }
-    printf("rpmc_sniffer: %u\n", PIO_NUM(rpmc_sniffer_inst.pio));
+    printf("request_sniffer: %u\n", PIO_NUM(request_sniffer.pio));
 
-    pio_gpio_init(rpmc_sniffer_inst.pio, clk);
+    pio_gpio_init(request_sniffer.pio, clk);
     gpio_set_input_hysteresis_enabled(clk, false);
-    pio_gpio_init(rpmc_sniffer_inst.pio, mosi);
+    pio_gpio_init(request_sniffer.pio, mosi);
     gpio_set_input_hysteresis_enabled(mosi, false);
-    pio_gpio_init(rpmc_sniffer_inst.pio, cs);
+    pio_gpio_init(request_sniffer.pio, cs);
 
-    rpmc_sniffer_inst.cfg = rpmc_sniffer_program_get_default_config(rpmc_sniffer_inst.offset);
+    request_sniffer.cfg = request_sniffer_program_get_default_config(request_sniffer.offset);
 
     // io mapping (inputs 0:svd)
-    sm_config_set_in_pins(&rpmc_sniffer_inst.cfg, mosi);
-    sm_config_set_in_pin_count(&rpmc_sniffer_inst.cfg, 1);
+    sm_config_set_in_pins(&request_sniffer.cfg, mosi);
+    sm_config_set_in_pin_count(&request_sniffer.cfg, 1);
 
     // shifts are msb-first 32-bits, enable autopush but disable autopull
-    sm_config_set_in_shift(&rpmc_sniffer_inst.cfg, false, true, 32);
-    sm_config_set_out_shift(&rpmc_sniffer_inst.cfg, false, false, 32);
+    sm_config_set_in_shift(&request_sniffer.cfg, false, true, 32);
+    sm_config_set_out_shift(&request_sniffer.cfg, false, false, 32);
 
     // setup cs as jump pins
-    sm_config_set_jmp_pin(&rpmc_sniffer_inst.cfg, cs);
+    sm_config_set_jmp_pin(&request_sniffer.cfg, cs);
 
     // 125 MHz
-    sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
+    sm_config_set_clkdiv(&request_sniffer.cfg, 1.0f);
 
-    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
+    int rc = pio_sm_init(request_sniffer.pio, request_sniffer.sm, request_sniffer.offset + request_sniffer_offset_start, &request_sniffer.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
         return rc;
     }
-    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+    pio_sm_set_enabled(request_sniffer.pio, request_sniffer.sm, true);
 
     // success
     return true;

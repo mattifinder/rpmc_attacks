@@ -1,4 +1,4 @@
-.program spi_slave
+.program read_interposer
 .define CLK 2
 .side_set 1 opt
 
@@ -86,60 +86,60 @@ write_loop_end:
 
 #include "helper.h"
 
-static struct pio_metadata interposer_inst = { .prog = &spi_slave_program, .inited = false};
+static struct pio_metadata read_interposer = { .prog = &read_interposer_program, .inited = false};
 
-bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int mosi, unsigned miso, const unsigned int mux)
+bool read_interposer_init(unsigned int cs, unsigned int clk, const unsigned int mosi, unsigned miso, const unsigned int mux)
 {
     // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
     //       for irq prev/next
-    if (!pio_claim_free_sm_and_add_program(interposer_inst.prog, &interposer_inst.pio, &interposer_inst.sm, &interposer_inst.offset)) {
+    if (!pio_claim_free_sm_and_add_program(read_interposer.prog, &read_interposer.pio, &read_interposer.sm, &read_interposer.offset)) {
         printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
         return false;
     }
-    printf("interposer_pio: %u\n", PIO_NUM(interposer_inst.pio));
-    pio_gpio_init(interposer_inst.pio, clk);
+    printf("read_interposer: %u\n", PIO_NUM(read_interposer.pio));
+    pio_gpio_init(read_interposer.pio, clk);
     gpio_set_input_hysteresis_enabled(clk, false);
-    pio_gpio_init(interposer_inst.pio, cs);
-    pio_gpio_init(interposer_inst.pio, mosi);
+    pio_gpio_init(read_interposer.pio, cs);
+    pio_gpio_init(read_interposer.pio, mosi);
     gpio_set_input_hysteresis_enabled(mosi, false);
-    pio_gpio_init(interposer_inst.pio, miso);
+    pio_gpio_init(read_interposer.pio, miso);
     // gpio_set_slew_rate(miso, GPIO_SLEW_RATE_FAST);
     // gpio_set_drive_strength(miso, GPIO_DRIVE_STRENGTH_12MA);
 
-    pio_gpio_init(interposer_inst.pio, mux);
-    pio_sm_set_sideset_pins(interposer_inst.pio, interposer_inst.sm, mux);
+    pio_gpio_init(read_interposer.pio, mux);
+    pio_sm_set_sideset_pins(read_interposer.pio, read_interposer.sm, mux);
 
-    interposer_inst.cfg = spi_slave_program_get_default_config(interposer_inst.offset);
+    read_interposer.cfg = read_interposer_program_get_default_config(read_interposer.offset);
 
     // io mapping (inputs 0:svd)
-    sm_config_set_in_pins(&interposer_inst.cfg, mosi);
-    sm_config_set_in_pin_count(&interposer_inst.cfg, 1);
-    sm_config_set_out_pins(&interposer_inst.cfg, miso, 1);
-    sm_config_set_set_pins(&interposer_inst.cfg, miso, 1);
-    //pio_sm_set_pindirs_with_mask(interposer_inst.pio, interposer_inst.sm, 1, (1 << miso) | (1 << mux));
-    pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, mux, 1, true);
-    pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, miso, 1, true);
-    sm_config_set_sideset_pin_base(&interposer_inst.cfg, mux);
+    sm_config_set_in_pins(&read_interposer.cfg, mosi);
+    sm_config_set_in_pin_count(&read_interposer.cfg, 1);
+    sm_config_set_out_pins(&read_interposer.cfg, miso, 1);
+    sm_config_set_set_pins(&read_interposer.cfg, miso, 1);
+    //pio_sm_set_pindirs_with_mask(read_interposer.pio, read_interposer.sm, 1, (1 << miso) | (1 << mux));
+    pio_sm_set_consecutive_pindirs(read_interposer.pio, read_interposer.sm, mux, 1, true);
+    pio_sm_set_consecutive_pindirs(read_interposer.pio, read_interposer.sm, miso, 1, true);
+    sm_config_set_sideset_pin_base(&read_interposer.cfg, mux);
 
     // no RX fifo -> double TX fifo
-    sm_config_set_fifo_join(&interposer_inst.cfg, PIO_FIFO_JOIN_TX);
+    sm_config_set_fifo_join(&read_interposer.cfg, PIO_FIFO_JOIN_TX);
     // shift left, no autopush and threshold of 32
-    sm_config_set_in_shift(&interposer_inst.cfg, false, false, 32);
+    sm_config_set_in_shift(&read_interposer.cfg, false, false, 32);
     // shift left, autopull and threshold of 32
-    sm_config_set_out_shift(&interposer_inst.cfg, false, true, 32);
+    sm_config_set_out_shift(&read_interposer.cfg, false, true, 32);
 
     // setup cs as jump pins
-    sm_config_set_jmp_pin(&interposer_inst.cfg, cs);
+    sm_config_set_jmp_pin(&read_interposer.cfg, cs);
 
     // 125 MHz
-    sm_config_set_clkdiv(&interposer_inst.cfg, 1.0f);
+    sm_config_set_clkdiv(&read_interposer.cfg, 1.0f);
 
-    int rc = pio_sm_init(interposer_inst.pio, interposer_inst.sm, interposer_inst.offset + spi_slave_offset_start, &interposer_inst.cfg);
+    int rc = pio_sm_init(read_interposer.pio, read_interposer.sm, read_interposer.offset + read_interposer_offset_start, &read_interposer.cfg);
     if (rc < 0) {
         printf("Error: spi sniff sm failed to initialize!\n");
         return rc;
     }
-    pio_sm_set_enabled(interposer_inst.pio, interposer_inst.sm, true);
+    pio_sm_set_enabled(read_interposer.pio, read_interposer.sm, true);
 
     return true;
 }
