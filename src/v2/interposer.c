@@ -123,9 +123,7 @@ void interpose_intel()
     pio_sm_put_blocking(request_sniffer.pio, request_sniffer.sm, 0x9B03);
 
     // tell the second SM to match OP2
-    // TODO: explain the shifts (to gain one more clock cycle of time and
-    //       because the PIO discars the LSB due to autopull issues)
-    pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, ((0x96 >> 1) << 1));
+    pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, 0x96);
     // pre-fill the FIFO with a busy wait message
     pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
     pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, WAIT);

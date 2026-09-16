@@ -3,10 +3,14 @@
 .side_set 1 opt
 
 public start:
-    ; load bits to match into y. we pull only 31 bits to not trigger autopull.
-    ; the LSB is discarded by the pull below which means that the match bits
-    ; have to be shifted left once before being put into the FIFO
-    out y, 31
+    ; Load bits to match (i.e. OP2) into Y.
+    ;
+    ; Only pull 7 bits, instead of the full 8, to gain more time to switch the
+    ; mux (it needs up to 350ns). This works because 0x97 is not a valid command
+    ; and thus 7 bits are enough to identify the Read Data command.
+    ;
+    ; NOTE: We can only pull up to 31 here to not trigger autopull.
+    out y, 7
 
 wait_for_request:
     ; wait for the first SM to notify us about a found request command
