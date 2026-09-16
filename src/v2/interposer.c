@@ -81,19 +81,24 @@ static inline void pio_sm_put_byte_blocking(PIO pio, uint sm, uint8_t data)
     pio_sm_put_blocking(pio, sm, data << 24);
 }
 
-void interposer_send_short_status(PIO pio, uint sm, enum rpmc_status_short status)
+void interposer_wait_for_command()
 {
-    pio_sm_put_blocking(pio, sm, sizeof(status) * 8 - 1);
-    pio_sm_put_byte_blocking(pio, sm, status);
+    pio_sm_put_blocking(interposer.pio, interposer.sm, 1 << 31);
 }
 
-void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t count)
+void interposer_send_short_status(enum rpmc_status_short status)
+{
+    pio_sm_put_blocking(interposer.pio, interposer.sm, sizeof(status) * 8 - 1);
+    pio_sm_put_byte_blocking(interposer.pio, interposer.sm, status);
+}
+
+void interposer_send(const uint8_t * data, const uint32_t count)
 {
     size_t i;
     uint32_t word;
 
     // put bit count
-    pio_sm_put_blocking(pio, sm, count * 8 - 1);
+    pio_sm_put_blocking(interposer.pio, interposer.sm, count * 8 - 1);
 
     // put data in words
     uint32_t words = count & ~0b11;
@@ -103,7 +108,7 @@ void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t coun
         word |= data[i + 1] << 16;
         word |= data[i + 2] << 8;
         word |= data[i + 3];
-        pio_sm_put_blocking(pio, sm, word);
+        pio_sm_put_blocking(interposer.pio, interposer.sm, word);
     }
 
     if (i >= count)
@@ -113,7 +118,7 @@ void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t coun
     word = 0;
     for (size_t j = 0; j < (count % 4); ++j)
         word |= data[i + j] << (24 - 8 * j);
-    pio_sm_put_blocking(pio, sm, word);
+    pio_sm_put_blocking(interposer.pio, interposer.sm, word);
 }
 
 /*
@@ -136,7 +141,7 @@ void interpose_intel() {
     // tell the interposer SM to match OP2
     pio_sm_put_byte_blocking(interposer.pio, interposer.sm, RPMC_OP2);
     // pre-fill the FIFO with a busy wait message
-    interposer_send_short_status(interposer.pio, interposer.sm, WAIT);
+    interposer_send_short_status(WAIT);
 
     // tell the third SM to match RPMC increment commands
     pio_sm_put_blocking(inc_sniff.pio, inc_sniff.sm, RPMC_INCREMENT);
@@ -179,16 +184,16 @@ void interpose_intel() {
 #endif
 
             // send a short ready message
-            interposer_send_short_status(interposer.pio, interposer.sm, DONE);
+            interposer_send_short_status(DONE);
 
             // send the long status
-            interposer_send(interposer.pio, interposer.sm, status.buf, sizeof(status.buf));
+            interposer_send(status.buf, sizeof(status.buf));
 
-            // tell the SM to wait for the next request
-            pio_sm_put_blocking(interposer.pio, interposer.sm, 1 << 31);
+            // tell the SM to wait for the next command
+            interposer_wait_for_command();
 
             // fill the FIFO with a busy wait message again
-            interposer_send_short_status(interposer.pio, interposer.sm, WAIT);
+            interposer_send_short_status(WAIT);
 
         } else if (!pio_sm_is_rx_fifo_empty(inc_sniff.pio, inc_sniff.sm)) {
             // Increment command
@@ -221,18 +226,18 @@ void interpose_intel() {
             counter_values[inc.idx]++;
 
             // Send a done message.
-            interposer_send_short_status(interposer.pio, interposer.sm, DONE);
+            interposer_send_short_status(DONE);
 
             // Even though there is no more data, we noticed that the Read
             // command is executed in the long form too on Intel. We will simply
             // send 0xFF... after the status
-            interposer_send_short_status(interposer.pio, interposer.sm, DONE);
+            interposer_send_short_status(DONE);
 
-            // tell the SM to wait for the next request
-            pio_sm_put_blocking(interposer.pio, interposer.sm, 1 << 31);
+            // tell the SM to wait for the next command
+            interposer_wait_for_command();
 
             // fill the FIFO with a busy wait message again
-            interposer_send_short_status(interposer.pio, interposer.sm, WAIT);
+            interposer_send_short_status(WAIT);
         }
     }
 }
