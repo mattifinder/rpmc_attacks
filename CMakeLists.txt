@@ -48,9 +48,9 @@ pico_add_extra_outputs(glitch_finder)
 target_compile_definitions(glitch_finder PRIVATE PROGRAM_MODE_FIND_DELAY)
 
 # interposer
-add_executable(interposer src/interposer.c)
+add_executable(interposer src/v2/interposer.c)
 target_include_directories(interposer PRIVATE include)
 target_link_libraries(interposer PRIVATE pico_stdlib hardware_spi hardware_pio pico_multicore pico_mbedtls)
-pico_generate_pio_header(interposer ${CMAKE_CURRENT_LIST_DIR}/src/spi_sniff.pio ${CMAKE_CURRENT_LIST_DIR}/src/rpmc_sniffer.pio)
+pico_generate_pio_header(interposer ${CMAKE_CURRENT_LIST_DIR}/src/v2/request_sniffer.pio ${CMAKE_CURRENT_LIST_DIR}/src/v2/increment_sniffer.pio ${CMAKE_CURRENT_LIST_DIR}/src/v2/read_interposer.pio)
 pico_enable_stdio_usb(interposer 1)
 pico_enable_stdio_uart(interposer 0)

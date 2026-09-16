@@ -8,8 +8,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "rpmc.h"
-#include "spi_sniff.pio.h"
-#include "rpmc_sniffer.pio.h"
+#include "request_sniffer.pio.h"
+#include "increment_sniffer.pio.h"
+#include "read_interposer.pio.h"
 #include "intel_flash_rollback.h"
 #include "board_v2.h"
 

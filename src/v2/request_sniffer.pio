@@ -1,0 +1,132 @@
+.program rpmc_sniffer
+
+; TODO: this is not accurate anymore
+; SPI Sniffer
+; When triggered, by a 32-bit value BITCOUNT in the TX fifo, this program
+; will wait for CS to go low and then sniff the next BITCOUNT bits from
+; MOSI. These are pushed to the RX fifo as multiples of 32-bits.
+;
+; FIFOs:
+; - TX holds 32-bit BITCOUNT values (autopull is enabled).
+; - RX transfers the sniffed bits (in 32-bit chunks) (autopush is enabled).
+; Pin mapping:
+; - in pins: 0 is SPI MOSI (gpio 3)
+; - uses gpio pins 2 (SPI CLK)
+; - JMPPIN is SPI CS (5)
+
+.define CLK 2
+
+public start:
+    ; because we move the bits back into osr after consuming them, we get away
+    ; with doing this only once
+    pull
+
+.wrap_target
+listen_for_match_bits:
+    ; load bits to match into y
+    out y, 32
+
+    ; Since we will have to overwrite register Y later to store something else
+    ; we will loose the match bits. But since we need the match bits in every
+    ; iteration we would have to either pull them again from the FIFO (requiring
+    ; the C code to put them there every iteration) or we can place them back
+    ; into OSR ourselves. This works because we don't have to pull any other
+    ; bits from the FIFO.
+    mov osr, y
+
+match_loop:
+    set x, 15                ; number of bits to match
+    mov isr, null
+
+    ; wait for falling chip select edge
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+
+    ; sample the bits to match into x on every rising clock edge
+bitloop:
+    wait 1 gpio CLK
+    in pins, 1
+    ; make sure that the clock goes down in between
+    wait 0 gpio CLK
+    jmp x--, bitloop
+bitloop_end:
+
+    ; compare read bits
+    mov x, isr              ; move bits read to x
+    jmp x!=y, match_loop    ; continue if bits don't match
+match_success:
+
+    ; A request command is 48 bytes long, but we're not interested in the 32
+    ; bytes of signature at the end and have read already the first two, so
+    ; we're still missing 14*8 bits. since we can't set immediate values larger
+    ; than 31, we have to use two counters for an outer loop and an inner one.
+    ; 14*8/16 = 7
+    ; NOTE: make sure the pico is fast enough for this (overclocking might be
+    ;       necessary)
+    set y, 6
+outerloop:
+    set x, 15
+innerloop:
+    wait 1 gpio CLK
+    in pins, 1
+    wait 0 gpio CLK
+    jmp x--, innerloop
+innerloop_end:
+    jmp y--, outerloop
+outerloop_end:
+
+    ; notify the second state machine that it can start looking for OP2
+    irq prev clear 4
+
+    ; jump back to listen_for_match_bits
+.wrap
+
+% c-sdk {
+
+#include "helper.h"
+
+static struct pio_metadata rpmc_sniffer_inst = { .prog = &rpmc_sniffer_program, .inited = false};;
+
+static int rpmc_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
+    // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
+    //       for irq prev/next
+    if (!pio_claim_free_sm_and_add_program(rpmc_sniffer_inst.prog, &rpmc_sniffer_inst.pio, &rpmc_sniffer_inst.sm, &rpmc_sniffer_inst.offset)) {
+        printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
+        return false;
+    }
+    printf("rpmc_sniffer: %u\n", PIO_NUM(rpmc_sniffer_inst.pio));
+
+    pio_gpio_init(rpmc_sniffer_inst.pio, clk);
+    gpio_set_input_hysteresis_enabled(clk, false);
+    pio_gpio_init(rpmc_sniffer_inst.pio, mosi);
+    gpio_set_input_hysteresis_enabled(mosi, false);
+    pio_gpio_init(rpmc_sniffer_inst.pio, cs);
+
+    rpmc_sniffer_inst.cfg = rpmc_sniffer_program_get_default_config(rpmc_sniffer_inst.offset);
+
+    // io mapping (inputs 0:svd)
+    sm_config_set_in_pins(&rpmc_sniffer_inst.cfg, mosi);
+    sm_config_set_in_pin_count(&rpmc_sniffer_inst.cfg, 1);
+
+    // shifts are msb-first 32-bits, enable autopush but disable autopull
+    sm_config_set_in_shift(&rpmc_sniffer_inst.cfg, false, true, 32);
+    sm_config_set_out_shift(&rpmc_sniffer_inst.cfg, false, false, 32);
+
+    // setup cs as jump pins
+    sm_config_set_jmp_pin(&rpmc_sniffer_inst.cfg, cs);
+
+    // 125 MHz
+    sm_config_set_clkdiv(&rpmc_sniffer_inst.cfg, 1.0f);
+
+    int rc = pio_sm_init(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, rpmc_sniffer_inst.offset + rpmc_sniffer_offset_start, &rpmc_sniffer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(rpmc_sniffer_inst.pio, rpmc_sniffer_inst.sm, true);
+
+    // success
+    return true;
+}
+
+%}

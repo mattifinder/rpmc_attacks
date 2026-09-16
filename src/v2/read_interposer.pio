@@ -1,0 +1,147 @@
+.program spi_slave
+.define CLK 2
+.side_set 1 opt
+
+public start:
+    ; load bits to match into y. we pull only 31 bits to not trigger autopull.
+    ; the LSB is discarded by the pull below which means that the match bits
+    ; have to be shifted left once before being put into the FIFO
+    out y, 31
+
+wait_for_request:
+    ; wait for the first SM to notify us about a found request command
+    irq wait 4
+
+.wrap_target
+status_reply:
+    ; pull the continue/done + length word into OSR
+    pull
+
+    ; MSB set means wait for interrupt (i.e. next request command), otherwise
+    ; the rest of OSR contains a valid length
+    out x, 1
+    jmp x--, wait_for_request
+
+match_loop:
+    set x, 6                ; bits to match (7, TODO explain)
+    mov isr, null
+
+    ; wait for falling chip select edge
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+
+    ; sample the bits to match into x on every rising clock edge
+bitloop:
+    wait 1 gpio CLK
+    in pins, 1
+    ; make sure that the clock goes down in between
+    wait 0 gpio CLK
+    jmp x--, bitloop
+bitloop_end:
+
+    ; compare read bits
+    mov x, isr              ; move bits read to x
+    jmp x!=y, match_loop    ; continue if bits don't match
+match_success:
+
+    ; set miso to 0xFF and start muxing
+    ;set pins, 1      side 1
+
+    ; wait to give the mux some time to switch
+    set x, 9         side 1
+wait_loop:
+    nop [5]
+    jmp x--, wait_loop
+wait_loop_end:
+
+    ; get the bit count (should be one less than actual) and start muxing. this
+    ; shouldn't stall due to autopull, because we assume data to be pushed fast
+    ; enough after the length
+    out x, 31
+write_loop:
+    ; write bit to miso before a rising clock edge
+    wait 0 gpio CLK
+    wait 1 gpio CLK
+    out pins, 1
+    ;jmp PIN write_loop_end
+    jmp x--, write_loop
+write_loop_end:
+
+    ; wait for CS to go up again
+    wait 1 JMPPIN
+
+    ; set miso to 0xFF and stop muxing
+    set pins, 1      side 0
+
+    ; since we can only push words into the fifo, there might still be some
+    ; dummy bits left in OSR. these will get cleared by the pull in status_reply
+    ; TODO: I think we're clearing one word too much if the bit count was
+    ;       divisable by 32.
+
+    ; jump back to status_reply
+.wrap
+
+
+% c-sdk {
+
+#include "helper.h"
+
+static struct pio_metadata interposer_inst = { .prog = &spi_slave_program, .inited = false};
+
+bool interposer_pio_init(unsigned int cs, unsigned int clk, const unsigned int mosi, unsigned miso, const unsigned int mux)
+{
+    // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
+    //       for irq prev/next
+    if (!pio_claim_free_sm_and_add_program(interposer_inst.prog, &interposer_inst.pio, &interposer_inst.sm, &interposer_inst.offset)) {
+        printf("Error: SPI sniff program could not be loaded/could not claim state machine!\n");
+        return false;
+    }
+    printf("interposer_pio: %u\n", PIO_NUM(interposer_inst.pio));
+    pio_gpio_init(interposer_inst.pio, clk);
+    gpio_set_input_hysteresis_enabled(clk, false);
+    pio_gpio_init(interposer_inst.pio, cs);
+    pio_gpio_init(interposer_inst.pio, mosi);
+    gpio_set_input_hysteresis_enabled(mosi, false);
+    pio_gpio_init(interposer_inst.pio, miso);
+    // gpio_set_slew_rate(miso, GPIO_SLEW_RATE_FAST);
+    // gpio_set_drive_strength(miso, GPIO_DRIVE_STRENGTH_12MA);
+
+    pio_gpio_init(interposer_inst.pio, mux);
+    pio_sm_set_sideset_pins(interposer_inst.pio, interposer_inst.sm, mux);
+
+    interposer_inst.cfg = spi_slave_program_get_default_config(interposer_inst.offset);
+
+    // io mapping (inputs 0:svd)
+    sm_config_set_in_pins(&interposer_inst.cfg, mosi);
+    sm_config_set_in_pin_count(&interposer_inst.cfg, 1);
+    sm_config_set_out_pins(&interposer_inst.cfg, miso, 1);
+    sm_config_set_set_pins(&interposer_inst.cfg, miso, 1);
+    //pio_sm_set_pindirs_with_mask(interposer_inst.pio, interposer_inst.sm, 1, (1 << miso) | (1 << mux));
+    pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, mux, 1, true);
+    pio_sm_set_consecutive_pindirs(interposer_inst.pio, interposer_inst.sm, miso, 1, true);
+    sm_config_set_sideset_pin_base(&interposer_inst.cfg, mux);
+
+    // no RX fifo -> double TX fifo
+    sm_config_set_fifo_join(&interposer_inst.cfg, PIO_FIFO_JOIN_TX);
+    // shift left, no autopush and threshold of 32
+    sm_config_set_in_shift(&interposer_inst.cfg, false, false, 32);
+    // shift left, autopull and threshold of 32
+    sm_config_set_out_shift(&interposer_inst.cfg, false, true, 32);
+
+    // setup cs as jump pins
+    sm_config_set_jmp_pin(&interposer_inst.cfg, cs);
+
+    // 125 MHz
+    sm_config_set_clkdiv(&interposer_inst.cfg, 1.0f);
+
+    int rc = pio_sm_init(interposer_inst.pio, interposer_inst.sm, interposer_inst.offset + spi_slave_offset_start, &interposer_inst.cfg);
+    if (rc < 0) {
+        printf("Error: spi sniff sm failed to initialize!\n");
+        return rc;
+    }
+    pio_sm_set_enabled(interposer_inst.pio, interposer_inst.sm, true);
+
+    return true;
+}
+
+%}
