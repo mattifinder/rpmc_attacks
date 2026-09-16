@@ -131,19 +131,19 @@ void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t coun
  */
 void interpose_intel() {
     // tell the first SM to match RPMC request commands
-    pio_sm_put_blocking(request_sniffer.pio, request_sniffer.sm, RPMC_REQUEST);
+    pio_sm_put_blocking(req_sniff.pio, req_sniff.sm, RPMC_REQUEST);
 
     // tell the interposer SM to match OP2
-    pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, RPMC_OP2);
+    pio_sm_put_byte_blocking(interposer.pio, interposer.sm, RPMC_OP2);
     // pre-fill the FIFO with a busy wait message
-    interposer_send_short_status(read_interposer.pio, read_interposer.sm, WAIT);
+    interposer_send_short_status(interposer.pio, interposer.sm, WAIT);
 
     // tell the third SM to match RPMC increment commands
-    pio_sm_put_blocking(increment_sniffer.pio, increment_sniffer.sm, RPMC_INCREMENT);
+    pio_sm_put_blocking(inc_sniff.pio, inc_sniff.sm, RPMC_INCREMENT);
 
     // TODO: do this via the pis_smX_rx_fifo_not_empty interrupts?
     while (true) {
-        if (!pio_sm_is_rx_fifo_empty(request_sniffer.pio, request_sniffer.sm)) {
+        if (!pio_sm_is_rx_fifo_empty(req_sniff.pio, req_sniff.sm)) {
             // Request command
 
             union rpmc_request req;
@@ -151,7 +151,7 @@ void interpose_intel() {
 
             // get the command bytes
             for (unsigned i = 0; i < count_of(req.words); ++i)
-                req.words[i] = pio_sm_get_blocking(request_sniffer.pio, request_sniffer.sm);
+                req.words[i] = pio_sm_get_blocking(req_sniff.pio, req_sniff.sm);
 
 #if 0
             print_rpmc_request(req);
@@ -179,25 +179,25 @@ void interpose_intel() {
 #endif
 
             // send a short ready message
-            interposer_send_short_status(read_interposer.pio, read_interposer.sm, DONE);
+            interposer_send_short_status(interposer.pio, interposer.sm, DONE);
 
             // send the long status
-            interposer_send(read_interposer.pio, read_interposer.sm, status.buf, sizeof(status.buf));
+            interposer_send(interposer.pio, interposer.sm, status.buf, sizeof(status.buf));
 
             // tell the SM to wait for the next request
-            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, 1 << 31);
+            pio_sm_put_blocking(interposer.pio, interposer.sm, 1 << 31);
 
             // fill the FIFO with a busy wait message again
-            interposer_send_short_status(read_interposer.pio, read_interposer.sm, WAIT);
+            interposer_send_short_status(interposer.pio, interposer.sm, WAIT);
 
-        } else if (!pio_sm_is_rx_fifo_empty(increment_sniffer.pio, increment_sniffer.sm)) {
+        } else if (!pio_sm_is_rx_fifo_empty(inc_sniff.pio, inc_sniff.sm)) {
             // Increment command
 
             union rpmc_increment inc;
 
             // get the command bytes
             for (unsigned i = 0; i < count_of(inc.words); ++i)
-                inc.words[i] = pio_sm_get_blocking(increment_sniffer.pio, increment_sniffer.sm);
+                inc.words[i] = pio_sm_get_blocking(inc_sniff.pio, inc_sniff.sm);
 
             // at this point we already sent the pre-filled busy message, so we
             // don't need to worry about that here
@@ -221,18 +221,18 @@ void interpose_intel() {
             counter_values[inc.idx]++;
 
             // Send a done message.
-            interposer_send_short_status(read_interposer.pio, read_interposer.sm, DONE);
+            interposer_send_short_status(interposer.pio, interposer.sm, DONE);
 
             // Even though there is no more data, we noticed that the Read
             // command is executed in the long form too on Intel. We will simply
             // send 0xFF... after the status
-            interposer_send_short_status(read_interposer.pio, read_interposer.sm, DONE);
+            interposer_send_short_status(interposer.pio, interposer.sm, DONE);
 
             // tell the SM to wait for the next request
-            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, 1 << 31);
+            pio_sm_put_blocking(interposer.pio, interposer.sm, 1 << 31);
 
             // fill the FIFO with a busy wait message again
-            interposer_send_short_status(read_interposer.pio, read_interposer.sm, WAIT);
+            interposer_send_short_status(interposer.pio, interposer.sm, WAIT);
         }
     }
 }

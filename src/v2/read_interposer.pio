@@ -123,18 +123,18 @@ write_loop_end:
 
 #include "helper.h"
 
-static struct pio_metadata read_interposer = { .prog = &read_interposer_program, .inited = false};
+static struct pio_metadata interposer = { .prog = &read_interposer_program, .inited = false};
 
 static int read_interposer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned miso, const unsigned int mux)
 {
     // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
     //       for irq prev/next
-    if (!pio_claim_free_sm_and_add_program(read_interposer.prog, &read_interposer.pio, &read_interposer.sm, &read_interposer.offset)) {
+    if (!pio_claim_free_sm_and_add_program(interposer.prog, &interposer.pio, &interposer.sm, &interposer.offset)) {
         printf("Error: Read interposer program could not be loaded\n");
         return false;
     }
-    PIO pio = read_interposer.pio;
-    uint sm = read_interposer.sm;
+    PIO pio = interposer.pio;
+    uint sm = interposer.sm;
     printf("read_interposer: %u\n", PIO_NUM(pio));
 
     pio_gpio_init(pio, clk);
@@ -145,8 +145,8 @@ static int read_interposer_init(const unsigned int cs, const unsigned int clk, c
     pio_gpio_init(pio, miso);
     pio_gpio_init(pio, mux);
 
-    read_interposer.cfg = read_interposer_program_get_default_config(read_interposer.offset);
-    pio_sm_config *cfg = &read_interposer.cfg;
+    interposer.cfg = read_interposer_program_get_default_config(interposer.offset);
+    pio_sm_config *cfg = &interposer.cfg;
 
     sm_config_set_in_pin_base(cfg, mosi);
     sm_config_set_jmp_pin(cfg, cs);
@@ -156,7 +156,7 @@ static int read_interposer_init(const unsigned int cs, const unsigned int clk, c
     pio_sm_set_pindirs_with_mask(pio, sm, 1, (1 << miso) | (1 << mux));
     sm_config_set_sideset_pin_base(cfg, mux);
 
-    int rc = pio_sm_init(pio, sm, read_interposer.offset + read_interposer_offset_start, cfg);
+    int rc = pio_sm_init(pio, sm, interposer.offset + read_interposer_offset_start, cfg);
     if (rc < 0) {
         printf("Error: Read interposer SM failed to initialize!\n");
         return rc;
