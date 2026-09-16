@@ -3,14 +3,14 @@
 
 #include <pico/binary_info.h>
 
-#define PIN_N_MUX_EN 17
+#define PIN_MUX_ENABLE 17
 /* During development and debugging of issues with the mux we physically shorted
  * the enable pin on some of our boards, since we don't really need to configure
  * it and wanted to eliminate it as the problem source.
  */
-#undef PIN_N_MUX_EN
-#ifdef PIN_N_MUX_EN
-bi_decl(bi_1pin_with_name(PIN_N_MUX_EN, "#MUX enable"));
+#undef PIN_MUX_ENABLE
+#ifdef PIN_MUX_ENABLE
+bi_decl(bi_1pin_with_name(PIN_MUX_ENABLE, "#MUX enable"));
 #endif
 
 #define PIN_MUX_INTERPOSE 16

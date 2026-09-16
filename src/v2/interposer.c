@@ -342,12 +342,12 @@ void reprogram_flash(spi_inst_t * const out_spi, const unsigned int cs)
 
 void init_mux()
 {
-#ifdef PIN_N_MUX_EN
+#ifdef PIN_MUX_ENABLE
     // Enable the mux (active low)
-    gpio_init(PIN_N_MUX_EN);
-    gpio_put(PIN_N_MUX_EN, 0);
-    //gpio_set_drive_strength(PIN_N_MUX_EN, GPIO_DRIVE_STRENGTH_8MA);
-    gpio_set_dir(PIN_N_MUX_EN, GPIO_OUT);
+    gpio_init(PIN_MUX_ENABLE);
+    gpio_put(PIN_MUX_ENABLE, 0);
+    //gpio_set_drive_strength(PIN_MUX_ENABLE, GPIO_DRIVE_STRENGTH_8MA);
+    gpio_set_dir(PIN_MUX_ENABLE, GPIO_OUT);
 #endif
 
     gpio_init(PIN_MUX_INTERPOSE);
