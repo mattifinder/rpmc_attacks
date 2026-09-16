@@ -90,39 +90,46 @@ outerloop_end:
 
 #include "helper.h"
 
-static struct pio_metadata inc_sniff = { .prog = &increment_sniffer_program, .inited = false};
+static struct pio_metadata inc_sniff = { .prog = &increment_sniffer_program,
+	                                 .inited = false };
 
-static int increment_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi)
+static int increment_sniffer_init(const unsigned int cs, const unsigned int clk,
+                                  const unsigned int mosi)
 {
-    // TODO: switch to pio_add_program. Does THIRD_PIO exist?
-    if (!pio_claim_free_sm_and_add_program(inc_sniff.prog, &inc_sniff.pio, &inc_sniff.sm, &inc_sniff.offset)) {
-        printf("Error: Increment sniffer program could not be loaded\n");
-        return false;
-    }
-    PIO pio = inc_sniff.pio;
-    uint sm = inc_sniff.sm;
-    printf("increment_sniffer: %u\n", PIO_NUM(pio));
+	// TODO: switch to pio_add_program. Does THIRD_PIO exist?
+	if (!pio_claim_free_sm_and_add_program(inc_sniff.prog, &inc_sniff.pio,
+	                                       &inc_sniff.sm,
+	                                       &inc_sniff.offset)) {
+		printf("Error: Increment sniffer program could not be loaded\n");
+		return false;
+	}
+	PIO pio = inc_sniff.pio;
+	uint sm = inc_sniff.sm;
+	printf("increment_sniffer: %u\n", PIO_NUM(pio));
 
-    pio_gpio_init(pio, clk);
-    gpio_set_input_hysteresis_enabled(clk, false);
-    pio_gpio_init(pio, mosi);
-    gpio_set_input_hysteresis_enabled(mosi, false);
-    pio_gpio_init(pio, cs);
+	pio_gpio_init(pio, clk);
+	gpio_set_input_hysteresis_enabled(clk, false);
+	pio_gpio_init(pio, mosi);
+	gpio_set_input_hysteresis_enabled(mosi, false);
+	pio_gpio_init(pio, cs);
 
-    inc_sniff.cfg = increment_sniffer_program_get_default_config(inc_sniff.offset);
-    pio_sm_config *cfg = &inc_sniff.cfg;
+	inc_sniff.cfg =
+		increment_sniffer_program_get_default_config(inc_sniff.offset);
+	pio_sm_config *cfg = &inc_sniff.cfg;
 
-    sm_config_set_in_pin_base(cfg, mosi);
-    sm_config_set_jmp_pin(cfg, cs);
+	sm_config_set_in_pin_base(cfg, mosi);
+	sm_config_set_jmp_pin(cfg, cs);
 
-    int rc = pio_sm_init(pio, sm, inc_sniff.offset + increment_sniffer_offset_start, cfg);
-    if (rc < 0) {
-        printf("Error: Increment sniffer SM failed to initialize\n");
-        return rc;
-    }
-    pio_sm_set_enabled(pio, sm, true);
+	int rc = pio_sm_init(pio, sm,
+	                     inc_sniff.offset + increment_sniffer_offset_start,
+	                     cfg);
+	if (rc < 0) {
+		printf("Error: Increment sniffer SM failed to initialize\n");
+		return rc;
+	}
+	pio_sm_set_enabled(pio, sm, true);
 
-    return true;
+	return true;
 }
 
 %}

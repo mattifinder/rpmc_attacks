@@ -14,7 +14,8 @@ bi_decl(bi_1pin_with_name(PIN_MUX_ENABLE, "#MUX enable"));
 #endif
 
 #define PIN_MUX_INTERPOSE 16
-bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE, "MUX switch (0 is chip, 1 is pico)"));
+bi_decl(bi_1pin_with_name(PIN_MUX_INTERPOSE,
+                          "MUX switch (0 is chip, 1 is pico)"));
 
 #define PIN_CHIP_VOLT_SEL 23
 #define PIN_CHIP_VOLT_MODE 24

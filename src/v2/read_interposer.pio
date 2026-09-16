@@ -123,47 +123,54 @@ write_loop_end:
 
 #include "helper.h"
 
-static struct pio_metadata interposer = { .prog = &read_interposer_program, .inited = false};
+static struct pio_metadata interposer = { .prog = &read_interposer_program,
+	                                  .inited = false };
 
-static int read_interposer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi, const unsigned miso, const unsigned int mux)
+static int read_interposer_init(const unsigned int cs, const unsigned int clk,
+                                const unsigned int mosi, const unsigned miso,
+                                const unsigned int mux)
 {
-    // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
-    //       for irq prev/next
-    if (!pio_claim_free_sm_and_add_program(interposer.prog, &interposer.pio, &interposer.sm, &interposer.offset)) {
-        printf("Error: Read interposer program could not be loaded\n");
-        return false;
-    }
-    PIO pio = interposer.pio;
-    uint sm = interposer.sm;
-    printf("read_interposer: %u\n", PIO_NUM(pio));
+	// TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
+	//       for irq prev/next
+	if (!pio_claim_free_sm_and_add_program(interposer.prog, &interposer.pio,
+	                                       &interposer.sm,
+	                                       &interposer.offset)) {
+		printf("Error: Read interposer program could not be loaded\n");
+		return false;
+	}
+	PIO pio = interposer.pio;
+	uint sm = interposer.sm;
+	printf("read_interposer: %u\n", PIO_NUM(pio));
 
-    pio_gpio_init(pio, clk);
-    gpio_set_input_hysteresis_enabled(clk, false);
-    pio_gpio_init(pio, mosi);
-    gpio_set_input_hysteresis_enabled(mosi, false);
-    pio_gpio_init(pio, cs);
-    pio_gpio_init(pio, miso);
-    pio_gpio_init(pio, mux);
+	pio_gpio_init(pio, clk);
+	gpio_set_input_hysteresis_enabled(clk, false);
+	pio_gpio_init(pio, mosi);
+	gpio_set_input_hysteresis_enabled(mosi, false);
+	pio_gpio_init(pio, cs);
+	pio_gpio_init(pio, miso);
+	pio_gpio_init(pio, mux);
 
-    interposer.cfg = read_interposer_program_get_default_config(interposer.offset);
-    pio_sm_config *cfg = &interposer.cfg;
+	interposer.cfg =
+		read_interposer_program_get_default_config(interposer.offset);
+	pio_sm_config *cfg = &interposer.cfg;
 
-    sm_config_set_in_pin_base(cfg, mosi);
-    sm_config_set_jmp_pin(cfg, cs);
-    sm_config_set_out_pin_base(cfg, miso);
-    sm_config_set_set_pin_base(cfg, miso);
+	sm_config_set_in_pin_base(cfg, mosi);
+	sm_config_set_jmp_pin(cfg, cs);
+	sm_config_set_out_pin_base(cfg, miso);
+	sm_config_set_set_pin_base(cfg, miso);
 
-    pio_sm_set_pindirs_with_mask(pio, sm, 1, (1 << miso) | (1 << mux));
-    sm_config_set_sideset_pin_base(cfg, mux);
+	pio_sm_set_pindirs_with_mask(pio, sm, 1, (1 << miso) | (1 << mux));
+	sm_config_set_sideset_pin_base(cfg, mux);
 
-    int rc = pio_sm_init(pio, sm, interposer.offset + read_interposer_offset_start, cfg);
-    if (rc < 0) {
-        printf("Error: Read interposer SM failed to initialize!\n");
-        return rc;
-    }
-    pio_sm_set_enabled(pio, sm, true);
+	int rc = pio_sm_init(
+		pio, sm, interposer.offset + read_interposer_offset_start, cfg);
+	if (rc < 0) {
+		printf("Error: Read interposer SM failed to initialize!\n");
+		return rc;
+	}
+	pio_sm_set_enabled(pio, sm, true);
 
-    return true;
+	return true;
 }
 
 %}

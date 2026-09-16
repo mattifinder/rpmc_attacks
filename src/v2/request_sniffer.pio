@@ -90,39 +90,46 @@ outerloop_end:
 
 #include "helper.h"
 
-static struct pio_metadata req_sniff = { .prog = &request_sniffer_program, .inited = false};
+static struct pio_metadata req_sniff = { .prog = &request_sniffer_program,
+	                                 .inited = false };
 
-static int request_sniffer_init(const unsigned int cs, const unsigned int clk, const unsigned int mosi) {
-    // TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
-    //       for irq prev/next
-    if (!pio_claim_free_sm_and_add_program(req_sniff.prog, &req_sniff.pio, &req_sniff.sm, &req_sniff.offset)) {
-        printf("Error: Request sniffer program could not be loaded\n");
-        return false;
-    }
-    PIO pio = req_sniff.pio;
-    uint sm = req_sniff.sm;
-    printf("request_sniffer: %u\n", PIO_NUM(pio));
+static int request_sniffer_init(const unsigned int cs, const unsigned int clk,
+                                const unsigned int mosi)
+{
+	// TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
+	//       for irq prev/next
+	if (!pio_claim_free_sm_and_add_program(req_sniff.prog, &req_sniff.pio,
+	                                       &req_sniff.sm,
+	                                       &req_sniff.offset)) {
+		printf("Error: Request sniffer program could not be loaded\n");
+		return false;
+	}
+	PIO pio = req_sniff.pio;
+	uint sm = req_sniff.sm;
+	printf("request_sniffer: %u\n", PIO_NUM(pio));
 
-    pio_gpio_init(pio, clk);
-    gpio_set_input_hysteresis_enabled(clk, false);
-    pio_gpio_init(pio, mosi);
-    gpio_set_input_hysteresis_enabled(mosi, false);
-    pio_gpio_init(pio, cs);
+	pio_gpio_init(pio, clk);
+	gpio_set_input_hysteresis_enabled(clk, false);
+	pio_gpio_init(pio, mosi);
+	gpio_set_input_hysteresis_enabled(mosi, false);
+	pio_gpio_init(pio, cs);
 
-    req_sniff.cfg = request_sniffer_program_get_default_config(req_sniff.offset);
-    pio_sm_config *cfg = &req_sniff.cfg;
+	req_sniff.cfg =
+		request_sniffer_program_get_default_config(req_sniff.offset);
+	pio_sm_config *cfg = &req_sniff.cfg;
 
-    sm_config_set_in_pin_base(cfg, mosi);
-    sm_config_set_jmp_pin(cfg, cs);
+	sm_config_set_in_pin_base(cfg, mosi);
+	sm_config_set_jmp_pin(cfg, cs);
 
-    int rc = pio_sm_init(pio, sm, req_sniff.offset + request_sniffer_offset_start, cfg);
-    if (rc < 0) {
-        printf("Error: Request sniffer SM failed to initialize\n");
-        return rc;
-    }
-    pio_sm_set_enabled(pio, sm, true);
+	int rc = pio_sm_init(
+		pio, sm, req_sniff.offset + request_sniffer_offset_start, cfg);
+	if (rc < 0) {
+		printf("Error: Request sniffer SM failed to initialize\n");
+		return rc;
+	}
+	pio_sm_set_enabled(pio, sm, true);
 
-    return true;
+	return true;
 }
 
 %}
