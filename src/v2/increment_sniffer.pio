@@ -1,4 +1,10 @@
-.program increment_sniffer
+; SPDX-License-Identifier: GPL-3.0-only
+; Copyright (c) 2026 Christian Werling
+; Copyright (c) 2026 Matti Finder
+; Copyright (c) 2026 Hans Niklas Jacob
+; Copyright (c) 2026 Julian Prein
+; Copyright (c) 2026 Niclas Kühnapfel
+; Copyright (c) 2026 Jean-Pierre Seifert
 
 ; RPMC Increment Sniffer
 ;
@@ -9,6 +15,8 @@
 ; - IN pin is SPI_MOSI
 ; - JMPPIN is SPI_CS
 ; - gpio 2 is SPI_CLK
+
+.program increment_sniffer
 
 ; IN pin should be MOSI
 .in 1 left auto 32

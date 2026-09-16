@@ -1,4 +1,10 @@
-.program read_interposer
+; SPDX-License-Identifier: GPL-3.0-only
+; Copyright (c) 2026 Christian Werling
+; Copyright (c) 2026 Matti Finder
+; Copyright (c) 2026 Hans Niklas Jacob
+; Copyright (c) 2026 Julian Prein
+; Copyright (c) 2026 Niclas Kühnapfel
+; Copyright (c) 2026 Jean-Pierre Seifert
 
 ; RPMC Status Interposer
 ;
@@ -13,6 +19,8 @@
 ; - SIDESET pin is MUX_SEL
 ; - JMPPIN is SPI_CS
 ; - gpio 2 is SPI_CLK
+
+.program read_interposer
 
 ; We don't need the RX fifo but heavily use TX, so double it
 .fifo tx
