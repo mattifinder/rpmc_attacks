@@ -63,12 +63,13 @@ If that doesn't work, the next option is iterating through the whole search spac
 Once found iterations on the setup should be performed, to e.g. reduce the resistance on the crowbar circuit.
 This is especially necessary if attempting to glitch a chip still soldered onto a laptop mainboard.
 
-### interposer.elf
+### interposer_v1.elf and interposer_v2.elf
 
 Interposer used to mount the attacks against our target systems.
 To set the specific mode you have to open a tty to the pico (`picocom -b 115200 -q /dev/<your tty>`) and then enter the corresponding letter:
 
-- a for amd interposing
+- a for AMD interposing (only v1)
+- i for Intel interposing (only v2)
 - r for writing an old spi state
 - other for just passing traffic through to the chip
 
@@ -80,6 +81,8 @@ To find them we looked for the sections that changed and extracted them using [p
 In our case these were the sections *PSP\_NVRAM* (0x1100000 size 0x40000), *PSP\_NV\_DATA* (0x10e0000 size 0x20000), and *ROM\_ARMOR\_BIOS\_NVSTORE* (x1060000 size 0x40000).
 Because these large files fill up the picos storage, we needed to perform some optimization on one of them to remove trailing 0xff and then implement the clearing of these bytes in another loop (see `reprogram_flash()`).
 All these values need to be put in the `include/psp_nvdata.h` file.
+
+This applies very similarly to Intel and the `include/intel_flash_rollback.h` file.
 
 #### Reducing SPI Speed
 
