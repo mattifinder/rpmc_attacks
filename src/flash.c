@@ -2,9 +2,6 @@
 #include <hardware/spi.h>
 #include "flash.h"
 
-#define FLASH_PAGE_SIZE 256
-#define FLASH_SECTOR_SIZE 4096
-
 static inline void cs_select(uint cs_pin)
 {
 	asm volatile("nop \n nop \n nop"); // FIXME
