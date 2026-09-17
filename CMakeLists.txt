@@ -54,3 +54,11 @@ target_link_libraries(interposer PRIVATE pico_stdlib hardware_spi hardware_pio p
 pico_generate_pio_header(interposer ${CMAKE_CURRENT_LIST_DIR}/src/amd_trigger.pio)
 pico_enable_stdio_usb(interposer 1)
 pico_enable_stdio_uart(interposer 0)
+
+# interposer_v2
+add_executable(interposer_v2 src/v2/interposer.c)
+target_include_directories(interposer_v2 PRIVATE include)
+target_link_libraries(interposer_v2 PRIVATE pico_stdlib hardware_spi hardware_pio pico_multicore pico_mbedtls)
+pico_generate_pio_header(interposer_v2 ${CMAKE_CURRENT_LIST_DIR}/src/v2/request_sniffer.pio ${CMAKE_CURRENT_LIST_DIR}/src/v2/increment_sniffer.pio ${CMAKE_CURRENT_LIST_DIR}/src/v2/read_interposer.pio)
+pico_enable_stdio_usb(interposer_v2 1)
+pico_enable_stdio_uart(interposer_v2 0)

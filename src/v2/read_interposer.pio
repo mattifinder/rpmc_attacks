@@ -1,0 +1,184 @@
+; SPDX-License-Identifier: GPL-3.0-only
+; Copyright (c) 2026 Christian Werling
+; Copyright (c) 2026 Matti Finder
+; Copyright (c) 2026 Hans Niklas Jacob
+; Copyright (c) 2026 Julian Prein
+; Copyright (c) 2026 Niclas Kühnapfel
+; Copyright (c) 2026 Jean-Pierre Seifert
+
+; RPMC Status Interposer
+;
+; This program will wait until it is notified by a different state machine. It
+; then waits for RPMC Read Data commands and will interpose these and reply with
+; forged data.
+;
+; Expected pin mapping:
+; - IN pin is SPI_MOSI
+; - OUT pin is SPI_MISO
+; - SET pin is SPI_MISO
+; - SIDESET pin is MUX_SEL
+; - JMPPIN is SPI_CS
+; - gpio 2 is SPI_CLK
+
+.program read_interposer
+
+; We don't need the RX fifo but heavily use TX, so double it
+.fifo tx
+
+; IN pin should be MOSI. Disable autopush since we have no RX fifo.
+.in 1 left 32
+; OUT pin should be MISO
+.out 1 left auto 32
+
+; SET pin should be MISO too
+.set 1
+; SIDESET pin should be the MUX select pin
+.side_set 1 opt
+
+; Expects PIN_PICO_BOARD_SPI_CLK to be 2
+.define CLK 2
+
+public start:
+    ; load bits to match (i.e. OP2) into Y.
+    ;
+    ; Only pull 7 bits, instead of the full 8, to gain more time to switch the
+    ; mux (it needs up to 350ns). This works because 0x97 is not a valid command
+    ; and thus 7 bits are enough to identify the Read Data command.
+    ;
+    ; NOTE: We can only pull up to 31 here to not trigger autopull.
+    out y, 7
+
+wait_for_request:
+    ; wait for one of the other SMs to notify us that we can start looking (i.e.
+    ; there was a Request or Increment command)
+    irq wait 4
+
+.wrap_target
+status_reply:
+    ; pull the continue/done + length word into OSR.
+    pull
+
+    ; MSB set means wait for interrupt (i.e. next command), otherwise the rest
+    ; of OSR contains a valid length
+    out x, 1
+    jmp x--, wait_for_request
+
+match_loop:
+    ; match 7 bits (see explaination above)
+    set x, 6
+    ; reset ISR used in the bitloop
+    mov isr, null
+
+    ; wait for falling chip select edge
+    wait 1 JMPPIN
+    wait 0 JMPPIN
+
+    ; sample the bits to match on every rising clock edge
+bitloop:
+    wait 1 gpio CLK
+    in pins, 1
+    ; make sure that the clock goes down in between
+    wait 0 gpio CLK
+    jmp x--, bitloop
+bitloop_end:
+
+    ; compare read bits and restart if they don't match
+    mov x, isr
+    jmp x!=y, match_loop
+match_success:
+
+    ; Switch the mux. Since it may need up to 350ns to do that, we wait during
+    ; the 8 dummy clocks (8 * 40ns = 320ns) and hope that it was enough (in our
+    ; experiments the mux was done around 160ns).
+    set x, 9         side 1
+wait_loop:
+    nop [5]
+    jmp x--, wait_loop
+wait_loop_end:
+
+    ; Get the bit count (should be one less than actual). This shouldn't stall
+    ; due to autopull, because of the data that comes after. We shift only 31
+    ; bits because the MSB was used already as a continue/done marker
+    out x, 31
+write_loop:
+    wait 0 gpio CLK
+    wait 1 gpio CLK
+    ; write bit to miso for the next rising clock edge
+    out pins, 1
+    jmp x--, write_loop
+write_loop_end:
+
+    ; wait for CS to go up again
+    wait 1 JMPPIN
+
+    ; set miso to 0xFF and stop muxing
+    set pins, 1      side 0
+
+    ; Since we can only push words into the fifo, there might still be some
+    ; dummy bits left in OSR. these will get cleared by the pull in status_reply
+    ;
+    ; FIXME When the bit count is divisable by 32, autopull already pulls the
+    ;       next word which will then be overwritten by the manual pull in
+    ;       status_reply. Our code has no problems with this, but the C code
+    ;       could protect from this by pushing a dummy word at the end in that
+    ;       case.
+
+    ; jump back to status_reply
+.wrap
+
+
+% c-sdk {
+
+#include "helper.h"
+
+static struct pio_metadata interposer = { .prog = &read_interposer_program,
+	                                  .inited = false };
+
+static int read_interposer_init(const unsigned int cs, const unsigned int clk,
+                                const unsigned int mosi, const unsigned miso,
+                                const unsigned int mux)
+{
+	// TODO: switch to pio_add_program with {FIRST,SECOND}_PIO for consistency
+	//       for irq prev/next
+	if (!pio_claim_free_sm_and_add_program(interposer.prog, &interposer.pio,
+	                                       &interposer.sm,
+	                                       &interposer.offset)) {
+		printf("Error: Read interposer program could not be loaded\n");
+		return false;
+	}
+	PIO pio = interposer.pio;
+	uint sm = interposer.sm;
+	printf("read_interposer: %u\n", PIO_NUM(pio));
+
+	pio_gpio_init(pio, clk);
+	gpio_set_input_hysteresis_enabled(clk, false);
+	pio_gpio_init(pio, mosi);
+	gpio_set_input_hysteresis_enabled(mosi, false);
+	pio_gpio_init(pio, cs);
+	pio_gpio_init(pio, miso);
+	pio_gpio_init(pio, mux);
+
+	interposer.cfg =
+		read_interposer_program_get_default_config(interposer.offset);
+	pio_sm_config *cfg = &interposer.cfg;
+
+	sm_config_set_in_pin_base(cfg, mosi);
+	sm_config_set_jmp_pin(cfg, cs);
+	sm_config_set_out_pin_base(cfg, miso);
+	sm_config_set_set_pin_base(cfg, miso);
+
+	pio_sm_set_pindirs_with_mask(pio, sm, 1, (1 << miso) | (1 << mux));
+	sm_config_set_sideset_pin_base(cfg, mux);
+
+	int rc = pio_sm_init(
+		pio, sm, interposer.offset + read_interposer_offset_start, cfg);
+	if (rc < 0) {
+		printf("Error: Read interposer SM failed to initialize!\n");
+		return rc;
+	}
+	pio_sm_set_enabled(pio, sm, true);
+
+	return true;
+}
+
+%}
