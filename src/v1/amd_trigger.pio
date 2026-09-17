@@ -1,4 +1,10 @@
-.program amd_trigger
+; SPDX-License-Identifier: GPL-3.0-only
+; Copyright (c) 2026 Christian Werling
+; Copyright (c) 2026 Matti Finder
+; Copyright (c) 2026 Hans Niklas Jacob
+; Copyright (c) 2026 Julian Prein
+; Copyright (c) 2026 Niclas Kühnapfel
+; Copyright (c) 2026 Jean-Pierre Seifert
 
 ; SPI Sniffer
 ; When triggered, by a 32-bit value BITCOUNT in the TX fifo, this program
@@ -12,6 +18,8 @@
 ; - in pins: 0 is SPI MOSI (gpio 3)
 ; - uses gpio pins 2 (SPI CLK)
 ; - JMPPIN is SPI CS (5)
+
+.program amd_trigger
 
 .define CLK 2
 
