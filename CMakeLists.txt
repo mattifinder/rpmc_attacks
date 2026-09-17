@@ -47,13 +47,13 @@ pico_enable_stdio_uart(glitch_finder 0)
 pico_add_extra_outputs(glitch_finder)
 target_compile_definitions(glitch_finder PRIVATE PROGRAM_MODE_FIND_DELAY)
 
-# interposer
-add_executable(interposer src/interposer.c)
-target_include_directories(interposer PRIVATE include)
-target_link_libraries(interposer PRIVATE pico_stdlib hardware_spi hardware_pio pico_multicore pico_mbedtls)
-pico_generate_pio_header(interposer ${CMAKE_CURRENT_LIST_DIR}/src/amd_trigger.pio)
-pico_enable_stdio_usb(interposer 1)
-pico_enable_stdio_uart(interposer 0)
+# interposer_v1
+add_executable(interposer_v1 src/v1/interposer.c)
+target_include_directories(interposer_v1 PRIVATE include)
+target_link_libraries(interposer_v1 PRIVATE pico_stdlib hardware_spi hardware_pio pico_multicore pico_mbedtls)
+pico_generate_pio_header(interposer_v1 ${CMAKE_CURRENT_LIST_DIR}/src/v1/amd_trigger.pio)
+pico_enable_stdio_usb(interposer_v1 1)
+pico_enable_stdio_uart(interposer_v1 0)
 
 # interposer_v2
 add_executable(interposer_v2 src/v2/interposer.c)
