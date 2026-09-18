@@ -58,7 +58,7 @@
     "ssh_key": ""
   },
   "meta": {
-    "filename": "RP2350_80QFN_minimal.kicad_prl",
+    "filename": "rpmc_interposer_v2.kicad_prl",
     "version": 5
   },
   "net_inspector_panel": {
@@ -87,16 +87,16 @@
       9
     ],
     "col_widths": [
-      63,
-      64,
-      86,
+      156,
+      141,
+      103,
       71,
-      76,
-      89,
-      77,
+      103,
+      103,
+      103,
       74,
-      40,
-      42
+      103,
+      103
     ],
     "custom_group_rules": [],
     "expanded_rows": [],

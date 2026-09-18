@@ -4,3 +4,5 @@ build
 .DS_Store
 results
 __pycache__
+interposer/v2/rpmc_interposer_v2-backups/*
+interposer/v1/pico-rpmc-board-backups/*

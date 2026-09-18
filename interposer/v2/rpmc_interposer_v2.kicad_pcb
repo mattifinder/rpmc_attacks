@@ -182,7 +182,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/00000000-0000-0000-0000-00005f0930a1")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -329,7 +329,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/00000000-0000-0000-0000-00005edb1aa1")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -476,7 +476,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/00000000-0000-0000-0000-00005edac067")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -622,7 +622,7 @@
 		(property ki_fp_filters "SOT?223*TabPin2*")
 		(path "/00000000-0000-0000-0000-00005f04c8b7")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -890,7 +890,7 @@
 		(property ki_fp_filters "*SOIC*5.3x5.3mm*P1.27mm*")
 		(path "/00000000-0000-0000-0000-00005eda5f2c")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -1261,7 +1261,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/b060e775-6caf-44e0-a80c-ff2a742dcae8")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -1408,7 +1408,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/00000000-0000-0000-0000-00005ede0881")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -1554,7 +1554,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/00000000-0000-0000-0000-00005f09255d")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -1701,7 +1701,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/00000000-0000-0000-0000-00005ede1624")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -1848,7 +1848,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/00000000-0000-0000-0000-00005f1af96d")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -1994,7 +1994,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/77d1b4a4-9ae6-4085-8300-8a82ff340be1")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -2141,7 +2141,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/a3ec68e2-704d-404c-97b0-00421b9ff8a8")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -2287,7 +2287,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/eb3a3d7d-34e6-4660-8710-4db231c6f7de")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -2434,7 +2434,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/e98343a4-ae66-48d1-bff7-a8461f67d732")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -2585,7 +2585,7 @@
 		(property ki_fp_filters "USB*C*Receptacle*")
 		(path "/484f3f18-4f19-4ad4-9fcc-57cd28f89dd7")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -3025,7 +3025,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/1baf75ce-b576-4e5b-a968-eae4e1150743")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -3172,7 +3172,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/79ec3a8f-0a77-48a4-9db2-822ab1f45a4e")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -3319,7 +3319,7 @@
 		(property ki_fp_filters "Connector*:*_1x??-1MP*")
 		(path "/a4508228-dd38-46fa-aa5e-3f08d93631a1")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -3971,7 +3971,7 @@
 		)
 		(path "/9cf70ea6-7bcf-4c2a-b2b2-504040db3876")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -4157,7 +4157,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/c155b15c-7549-4a2e-90ad-41e7976fe6b0")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -4304,7 +4304,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/49804f0b-88e0-4255-82cf-7a091749a988")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -4451,7 +4451,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/838f2f8a-cee7-4869-ad9a-fcfb64bc990a")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -4634,7 +4634,7 @@
 		(property ki_fp_filters "Connector*:*_1x??_*")
 		(path "/f0d3d1ac-701b-405f-9382-623e61515276")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -4909,7 +4909,7 @@
 		(property ki_fp_filters "SOT?223*TabPin2*")
 		(path "/74313237-b2ce-419a-bfe9-6b5a8d251d59")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -5177,7 +5177,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/b62daa8c-ad83-4fa8-b60a-adbad8837b78")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -5324,7 +5324,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/00000000-0000-0000-0000-00005eeee897")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -5471,7 +5471,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/652e05eb-cc4d-4ad2-9331-5685bd21ac05")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -5618,7 +5618,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/f15fa39a-c9bb-4e03-92a9-7cd281dbcb41")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -5770,12 +5770,13 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+					(thickness 0.15)
 				)
 			)
 		)
 		(path "/bc559360-5dcd-43ea-8676-fb240b85ecc4")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -6099,7 +6100,7 @@
 		(property ki_fp_filters "Connector*:*_2x??_*")
 		(path "/fe6343db-1886-450a-9209-3a331ab772e3")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -6402,7 +6403,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/8a36b2af-9aa0-4061-85d7-684ceed68d6e")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -6549,7 +6550,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/9c77ddd7-0f01-4a10-8d25-561e0b821e2b")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -6695,7 +6696,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/ac1edf86-acb1-434e-8a1e-7cc97705c070")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -6842,7 +6843,7 @@
 		(property ki_fp_filters "*TSOT*23?16*")
 		(path "/9e821ab9-69f3-48e6-8a3e-e9a5981e3eb3")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -7295,7 +7296,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/72f87afe-4615-4155-b3bf-aef3f1e9e8e7")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -7442,7 +7443,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/305f76cb-d440-4256-8e46-3871073f8f8b")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -7589,7 +7590,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/26f0e476-d88b-414c-b8ed-34b11ba9877a")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -7736,7 +7737,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/cb0f1e5d-e572-4f44-8a4a-6f7f23812888")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -7924,7 +7925,7 @@
 		(property ki_fp_filters "SOT?5?3*")
 		(path "/c90e85bb-571b-48f3-8ce4-37f158c8877d")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -8222,7 +8223,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/919c1793-0fcf-4575-8c6c-eda756a79fa2")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -8373,13 +8374,14 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+					(thickness 0.15)
 				)
 			)
 		)
 		(property ki_fp_filters "Connector*:*_1x??_*")
 		(path "/393ad95d-c837-44be-81dd-29fabf04de1f")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -8631,7 +8633,7 @@
 		(property ki_fp_filters "Connector*:*_1x??_*")
 		(path "/5d817228-9bcb-4b58-9596-0d6ac7837687")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -8927,7 +8929,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/3099e754-eb84-44b5-a360-bec63485fbf2")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -9074,7 +9076,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/b17c8480-357a-4ec3-8ded-7eee9809e77b")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -9221,7 +9223,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/afc5815d-d894-4cd1-ba9b-a5ec9f40998e")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -9367,7 +9369,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/e7bdfdc0-83a5-4426-93d7-78986ebcdf5e")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -9514,7 +9516,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/0ab85eb0-12c4-4c2d-894b-1b144e83cdf3")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -9660,7 +9662,7 @@
 		(property ki_fp_filters "*SC?70*")
 		(path "/e16aaa8d-f677-4115-8244-4ba7d9819795")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -10010,7 +10012,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/0998773a-4f97-4e52-9181-138690d7d596")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -10157,7 +10159,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/114861c8-d69c-4ad3-9b2c-3179621123e9")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -10304,7 +10306,7 @@
 		(property ki_fp_filters "Connector*:*_1x??_*")
 		(path "/58fe2395-3606-4afb-87da-4ff1a52c9d9b")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -10545,7 +10547,7 @@
 		(property ki_fp_filters "Connector*:*_1x??_*")
 		(path "/7d0ea271-5f7a-485a-8da7-9337b5936b18")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -10814,7 +10816,7 @@
 		)
 		(path "/c7fb2975-ddad-4934-98e4-654ec059c3d7")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -12165,7 +12167,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/ad2de41d-27a8-471f-99ad-3d5d4afc04e3")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -12312,7 +12314,7 @@
 		(property ki_fp_filters "*TSOT*23?16*")
 		(path "/33e9e84c-86a2-4281-9040-b824f2ad50c8")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -12769,13 +12771,14 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+					(thickness 0.15)
 				)
 			)
 		)
 		(property ki_fp_filters "Connector*:*_1x??_*")
 		(path "/7ed4f13b-677d-410b-8d83-5bc4152a1b6e")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -13026,7 +13029,7 @@
 		(property ki_fp_filters "Choke_* *Coil* Inductor_* L_*")
 		(path "/4f70ee66-41ca-4ae7-b93c-70a7d8aa391d")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -13237,13 +13240,14 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+					(thickness 0.15)
 				)
 			)
 		)
 		(property ki_fp_filters "Connector*:*_1x??_*")
 		(path "/72497327-4b1e-4069-923b-ba2ecc2d0fdc")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -13495,7 +13499,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/08d11e02-ccac-48cf-aac0-5d900842d70d")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -13642,7 +13646,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/d232298f-9259-4f8a-a96e-f73acfbd6486")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -13789,7 +13793,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/d69bc3d4-febc-4c7f-a813-87c5633b3e66")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -13941,12 +13945,13 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+					(thickness 0.15)
 				)
 			)
 		)
 		(path "/31beb0b3-741d-4ea8-9364-2da49879897e")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -14270,7 +14275,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/bc7e0ff5-9404-46b2-9cb3-ceb12d1a20d0")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -14417,7 +14422,7 @@
 		(property ki_fp_filters "Connector*:*_2x??_*")
 		(path "/9b2a1038-ecda-448f-8379-6cda7e7c6feb")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -14947,7 +14952,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/100d8571-a9e8-4bae-8312-52aa7ac38044")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -15093,7 +15098,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/c549ff43-63eb-44c0-bac1-75c31ddfa723")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -15240,7 +15245,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/6edb35cc-731f-429e-b101-b762adc68bec")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -15387,7 +15392,7 @@
 		(property ki_fp_filters "R_*")
 		(path "/9e946987-b360-4475-b19d-5da30fc44c62")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -15538,13 +15543,14 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+					(thickness 0.15)
 				)
 			)
 		)
 		(property ki_fp_filters "Connector*:*_1x??_*")
 		(path "/a81baf4f-7b66-4d0c-83f4-3212c9679fa5")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -15796,7 +15802,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/c4d3537d-b6e1-4823-b62c-db724c7051d3")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -15943,7 +15949,7 @@
 		(property ki_fp_filters "C_*")
 		(path "/1f56dccc-5777-4772-836a-6e5e3a2d1e3a")
 		(sheetname "/")
-		(sheetfile "RP2350_80QFN_minimal.kicad_sch")
+		(sheetfile "rpmc_interposer_v2.kicad_sch")
 		(units
 			(unit
 				(name "A")
@@ -17918,7 +17924,7 @@
 		(uuid "14509815-c9d0-4e4d-a092-b53819d6ac64")
 	)
 	(via
-		(at 76.581 100.711)
+		(at 76.0222 99.4156)
 		(size 0.6)
 		(drill 0.35)
 		(layers "F.Cu" "B.Cu")
