@@ -15,6 +15,7 @@ Projects are tested on the **pico 2 (W)**.
 - `src` houses the firmware code for the pico, better explained in the "Building" section
 - `interposer` contains the kicad project for the different interposer pcbs
 - `traces` contains some addition trace, more information in section "Traces \& Supplemental Videos"
+- `videos` contains to recordings of our E2E attacks which are also on YouTube: [`amd_hello.mp4`](https://www.youtube.com/watch?v=Yq2Wa-nj68g), [`wintel_bitlocker.mp4`](https://www.youtube.com/watch?v=MnplktYLMJw)
 
 ## Building
 
