@@ -14,7 +14,7 @@ In the paper, we introduce vulnerabilities in both RPMC flash chips (e.g., Winbo
 
 ### AMD systems relying on pre-RPMC flash may already use RPMC functionality
 
-In our paper, we claim that the Lenovo IdeaPad 5 Pro 16ACH16 from 2021 does not use RPMC. Technically, this is correct, as the used flash chip (Winbond 74M series) does not support a technology called RPMC. However, as we found out only after the camera-ready deadline of the paper, **this flash series is already a so-called [Authentication Flash](https://www.winbond.com/productResource-files/Winbond_Authentication%20Flash_Product%20Brief.pdf) that is functionally identical and uses the exact same commands as the RPMC version.** We verified that it is used by tracing SPI flash during boot and our [Saleae RPMC analyzer](https://github.com/mattifinder/saleae-RPMC-analyzer) detected the commands right away. Most importantly, this falsifies our assumption that AMD prevents NV state rollbacks without RPMC (or *Authentication Flash*) that that system. 
+In our paper, we claim that the Lenovo IdeaPad 5 Pro 16ACH16 from 2021 does not use RPMC. Technically, this is correct, as the used flash chip (Winbond 74M series) does not support a technology called RPMC. However, as we found out only after the final deadline of the paper, **this flash series is already a so-called [Authentication Flash](https://www.winbond.com/productResource-files/Winbond_Authentication%20Flash_Product%20Brief.pdf) that is functionally identical and uses the exact same commands as the RPMC version.** We verified that it is used by tracing SPI flash during boot and our [Saleae RPMC analyzer](https://github.com/mattifinder/saleae-RPMC-analyzer) detected the commands right away. Most importantly, this falsifies our assumption that AMD prevents NV state rollbacks without RPMC (or *Authentication Flash*) on that system.
 
 Secondly, we tested a naive NV state rollback on an even older Zen 2-based ASUS desktop mainboard featuring an SPI Flash without rollback counters (Winbond W25Q series): **On this system, naive NV state rollbacks are not detected. Instead, they allowed us to reliably reset the TPM's dictionary attack counters only by reprogramming an old NV state onto the SPI flash using an SPI programmer.**
 
@@ -22,8 +22,10 @@ While these two observations may not be representative of all AMD systems, our k
 
 1. **RPMC was already used on systems as early as 2021**, despite being called *[Authentication Flash](https://www.winbond.com/productResource-files/Winbond_Authentication%20Flash_Product%20Brief.pdf)* by Winbond.
 2. A Zen 2-based desktop **system without access to RPMC-like SPI flash allows naive rollbacks** of the NV state.
-3. Our assumption that **AMD SoCs feature standalone rollback protection for their NV state** was **probably wrong**. 
+3. Our assumption that **AMD SoCs feature standalone rollback protection for their NV state** was **probably wrong**.
    (Our highlighted recommendation to fix the current issues with both RPMC controllers and flash  by falling back to those (Section 6 - "RPMC Security") is, therefore, worthless.)
+
+Intel in contrast does seem to have their own pre-RPMC rollback protection, since we couldn't naively rollback the NV state on the Acer Aspire, whose Macronix MX25U25672G doesn't have a comparable feature.
 
 ### Brute-force speeds of E2E attack against Winbond/Intel
 
@@ -37,7 +39,7 @@ A simple optimization of our KVM's attack loop sped up the overall duration of t
 - `kvm_scripts` contains the scripts we used for our nano kvm to film the demo video and test the full end-to-end pin brute force
 - `src` contains the firmware code for the interposer's RP2350 that makes heavy use of PIO state machines; see "Building" below
 - `interposer` contains the kicad projects for the two versions of the interposer PCB
-- `traces` contains some addition traces, more information in section "Traces \& Supplemental Videos"
+- `traces` contains some additional traces, more information in section "Traces \& Supplemental Videos"
 - `videos` contains two recordings of our E2E attacks which are also on YouTube: [`amd_hello.mp4`](https://www.youtube.com/watch?v=Yq2Wa-nj68g), [`wintel_bitlocker.mp4`](https://www.youtube.com/watch?v=MnplktYLMJw)
 
 
