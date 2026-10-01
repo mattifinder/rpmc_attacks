@@ -1,23 +1,50 @@
 # RPMC Attacks
 
-This repository contains code useful for attacking RPMC-capable SPI flash chips.
-It mostly serves supplemental material for the a publication titled ["Hello Again: Exploiting Replay Protected Monotonic Counters to Brute-Force Windows Hello PINs"](https://doi.org/10.1145/3830454.3846631) published in ACM CCS 2026.
+This repository provides up-to-date information as well as supplemental material to our paper: 
+["Hello Again: Exploiting Replay Protected Monotonic Counters to Brute-Force Windows Hello PINs"](https://doi.org/10.1145/3830454.3846631) (originally published at ACM CCS 2026)
 
-It enables the use of different glitches on a target flash chip and exploiting controller vulnerabilities.
-These consist of overflowing a counter, some voltage glitching attacks to leak hmac keys, and a full interposer for AMD and Intel.
+In the paper, we introduce vulnerabilities in both RPMC flash chips (e.g., Winbond's) and RPMC controllers (e.g., AMD's). This repository is mainly a collection of code that helped us test for the respective vulnerabilities. It includes scripts to test a counter for integer overflows, conduct crowbar voltage glitching attacks to test for sensitive leakages, and firmware for an RP2350 allowing two types of interposition attacks: one exploiting AMD's unverified RPMC increments and another for forging RPMC replies when an attacker is in posession of an HMAC key (e.g., on a Winbond-based system vulnerable to voltage glitching). It also contains the hardware designs for our custom interposer PCB.
 
-Projects are tested on the **pico 2 (W)**.
+> [!NOTE]
+> With this repository, we try to make our code and data available for other researchers. Given the experimental nature of offensive hardware security research, reproduction of our attacks is not plug-and-play. Most importantly, it assumes access to our interposer PCB ([v1](interposer/v1) or [v2](interposer/v2)).
 
-## Structure
 
-- `pocs` contains the python scripts we used to test some of our attacks
+
+## Important updates since paper release
+
+### AMD systems relying on pre-RPMC flash may already use RPMC functionality
+
+In our paper, we claim that the Lenovo IdeaPad 5 Pro 16ACH16 from 2021 does not use RPMC. Technically, this is correct, as the used flash chip (Winbond 74M series) does not support a technology called RPMC. However, as we found out only after the camera-ready deadline of the paper, **this flash series is already a so-called [Authentication Flash](https://www.winbond.com/productResource-files/Winbond_Authentication%20Flash_Product%20Brief.pdf) that is functionally identical and uses the exact same commands as the RPMC version.** We verified that it is used by tracing SPI flash during boot and our [Saleae RPMC analyzer](https://github.com/mattifinder/saleae-RPMC-analyzer) detected the commands right away. Most importantly, this falsifies our assumption that AMD prevents NV state rollbacks without RPMC (or *Authentication Flash*) that that system. 
+
+Secondly, we tested a naive NV state rollback on an even older Zen 2-based ASUS desktop mainboard featuring an SPI Flash without rollback counters (Winbond W25Q series): **On this system, naive NV state rollbacks are not detected. Instead, they allowed us to reliably reset the TPM's dictionary attack counters only by reprogramming an old NV state onto the SPI flash using an SPI programmer.**
+
+While these two observations may not be representative of all AMD systems, our key insights are these:
+
+1. **RPMC was already used on systems as early as 2021**, despite being called *[Authentication Flash](https://www.winbond.com/productResource-files/Winbond_Authentication%20Flash_Product%20Brief.pdf)* by Winbond.
+2. A Zen 2-based desktop **system without access to RPMC-like SPI flash allows naive rollbacks** of the NV state.
+3. Our assumption that **AMD SoCs feature standalone rollback protection for their NV state** was **probably wrong**. 
+   (Our highlighted recommendation to fix the current issues with both RPMC controllers and flash  by falling back to those (Section 6 - "RPMC Security") is, therefore, worthless.)
+
+### Brute-force speeds of E2E attack against Winbond/Intel
+
+A simple optimization of our KVM's attack loop sped up the overall duration of the 236-try brute-force campaign from 8min 40s to 6min 55s, so by ~ 20%. This decreases the worst-case **brute-force times for a default-length 6-digit BitLocker PIN from 26 days to ~ 20 days**.
+
+
+
+## File structure
+
+- `pocs` contains the Python scripts we used to test the flash chips in isolation
 - `kvm_scripts` contains the scripts we used for our nano kvm to film the demo video and test the full end-to-end pin brute force
-- `src` houses the firmware code for the pico, better explained in the "Building" section
-- `interposer` contains the kicad project for the different interposer pcbs
-- `traces` contains some addition trace, more information in section "Traces \& Supplemental Videos"
-- `videos` contains to recordings of our E2E attacks which are also on YouTube: [`amd_hello.mp4`](https://www.youtube.com/watch?v=Yq2Wa-nj68g), [`wintel_bitlocker.mp4`](https://www.youtube.com/watch?v=MnplktYLMJw)
+- `src` contains the firmware code for the interposer's RP2350 that makes heavy use of PIO state machines; see "Building" below
+- `interposer` contains the kicad projects for the two versions of the interposer PCB
+- `traces` contains some addition traces, more information in section "Traces \& Supplemental Videos"
+- `videos` contains two recordings of our E2E attacks which are also on YouTube: [`amd_hello.mp4`](https://www.youtube.com/watch?v=Yq2Wa-nj68g), [`wintel_bitlocker.mp4`](https://www.youtube.com/watch?v=MnplktYLMJw)
 
-## Building
+
+
+## Building the firmware
+
+The projects are tested on the **Raspberry Pi Pico 2 (W)** sitting on one of our two custom interposer PCBs.
 
 Build all subprojects with:
 
@@ -74,7 +101,7 @@ To set the specific mode you have to open a tty to the pico (`picocom -b 115200 
 - r for writing an old spi state
 - other for just passing traffic through to the chip
 
-#### Extracting Rollback State
+#### Extracting the Rollback State
 
 For automating our attack path, we included logic to rollback the necessary flash sections.
 Rollbacking the whole flash is also possible, but inefficient, though this is a good first test to see if everything works.
@@ -85,13 +112,15 @@ All these values need to be put in the `include/psp_nvdata.h` file.
 
 This applies very similarly to Intel and the `include/intel_flash_rollback.h` file.
 
-#### Reducing SPI Speed
+
+
+## Reducing the SPI Speed
 
 Because of signal integrity issues when using our interposer, we sadly couldn't perform the attacks while the laptops were using the full 80-100 MHz Quad SPI bandwidth available with these chips.
 Luckily, we found ways on both Intel and AMD to lower the SPI bus speed.
 While on Intel, this configuration is not cryptographically protected at all, AMD systems required replaying an AMD-signed configuration block from another system.
 
-##### AMD
+### AMD
 
 We found that the SPI clock speed of certain SPI transactions can be lowered by changing the *SpiRomConfig* blob (part of the PSP firmware blobs).
 While this configuration is signed by AMD, we found versions of it in the public coreboot project that are signed by the same key that our target's firmware expects (<https://github.com/coreboot/amd_blobs/tree/main/mendocino/PSP>).
@@ -99,7 +128,7 @@ More so, they contain versions of this config that are named after the SPI trans
 By replacing the existing *SpiRomConfig* blob with the *TypeId0x5C\_SpiRomConfig\_MDN\_Normal16.sbin* version from coreboot, we successfully lowered the SPI transaction speed.
 While this noticeably increases boot time, it enabled our interposition using the low-cost hardware introduced in the paper.
 
-##### Intel
+### Intel
 
 At the time of writing, the [coreboot project](https://github.com/coreboot/coreboot) provides a utility program called *ifdtool* that can modify the Intel firmware descriptor.
 The tool can be found in `util/ifdtool` and built using the provided Makefile.
@@ -109,6 +138,8 @@ This tool provides an option to also set the SPI speed to a desired value; in ou
 ```
 ifdtool -s 17 -p <platform> -O <outimage> <inimage>
 ```
+
+
 
 ## Traces \& Supplemental Videos
 
