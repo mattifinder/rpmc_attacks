@@ -33,6 +33,36 @@ A simple optimization of our KVM's attack loop sped up the overall duration of t
 
 
 
+## Am I affected?
+
+As of now, two sorts of systems are affected by our end-to-end attacks enabling fTPM rollback (and therefore dysfunctional anti-hammering/brute-force protection):
+
+1. **AMD-based** systems (any flash vendor, with or without RPMC; RPMC-based protection may be fixed by future AMD firmware updates)
+2. Systems relying on **Winbond RPMC flash** for its x86 firmware (UEFI/BIOS)
+
+
+
+### Is my system AMD-based?
+
+On Windows, press `Win + I`, go to System -> About. Under "Device specifications", the Processor line shows the exact model. 
+
+On Linux, open up a Terminal and run `lscpu`.
+
+If your system uses an AMD CPU, it is prone to either naive NV state rollbacks (using only an SPI Flash programmer) or, if it relies on RPMC to protect against NV state rollbacks, against attacks from our interposer suppressing the RPMC counter increments.
+
+
+
+### Does my system rely on Winbond RPMC flash for its x86 firmware?
+
+Unfortunately, telling the SPI flash manufacturer from running OS is impossible on a lot of systems. Moreso, OEMs may source SPI flash from multiple vendors for a single model.
+
+Open up the back of your laptop and look for a black rectangular chip with markings like Winbond, Macronix, GigaDevice. Winbond's RPMC-capable series are labelled 74M or 25R and it is very likely that those are specifically there to enable the rollback protection of NV state on both Intel and AMD.
+
+Lastly, to be sure that RPMC is used during boot, we recommend recording a logic analyzer trace of the SPI bus during boot (single SPI suffices as RPMC does not use Dual or Quad SPI). Our [RPMC analyzer for Saleae Logic](
+https://github.com/mattifinder/saleae-RPMC-analyzer) can help identify RPMC traffic. Counter retrievals and increments during boot will most likely come from RPMC-backed NV state rollback protection.
+
+
+
 ## File structure
 
 - `pocs` contains the Python scripts we used to test the flash chips in isolation
