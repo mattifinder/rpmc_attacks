@@ -13,6 +13,13 @@ import os
 
 import serial
 
+# $ pip install pytesseract serial
+try:
+    from PIL import Image
+    import pytesseract
+except ImportError:
+    pytesseract = None
+
 
 READABLE_LINES = [
     b'--frame\r\n',
@@ -179,10 +186,6 @@ def ocr_cycle(image_bytes):
 
 
 def hello_ocr(delta: int):
-    # $ pip install pytesseract serial
-    from PIL import Image
-    import pytesseract
-
     thread = None
     now = 0
 
@@ -384,8 +387,11 @@ def main(args):
     if target.lower() == "h":
         # the OCR version was sometimes pretty unreliable so we also implemented a
         # timing-based one
-        #hello_timing()
-        hello_ocr(delta)
+        if pytesseract is not None:
+            hello_ocr(delta)
+        else:
+            print("couldn't import PIL and pytesseract, falling back to timing")
+            hello_timing()
     else:
         return 1
 
