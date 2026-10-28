@@ -3,6 +3,10 @@
 This repository provides up-to-date information as well as supplemental material to our paper: 
 ["Hello Again: Exploiting Replay Protected Monotonic Counters to Brute-Force Windows Hello PINs"](https://doi.org/10.1145/3830454.3846631) (originally published at ACM CCS 2026)
 
+> [!IMPORTANT]
+>
+> tl;dr: If you rely on numeric Windows Hello or BitLocker PINs, **increase your PIN length by at least two digits**. Even in light of our attacks, this increases the time to bruteforce them from several days to months or even years.
+
 In the paper, we introduce vulnerabilities in both RPMC flash chips (e.g., Winbond's) and RPMC controllers (e.g., AMD's). This repository is mainly a collection of code that helped us test for the respective vulnerabilities. It includes scripts to test a counter for integer overflows, conduct crowbar voltage glitching attacks to test for sensitive leakages, and firmware for an RP2350 allowing two types of interposition attacks: one exploiting AMD's unverified RPMC increments and another for forging RPMC replies when an attacker is in posession of an HMAC key (e.g., on a Winbond-based system vulnerable to voltage glitching). It also contains the hardware designs for our custom interposer PCB.
 
 > [!NOTE]
