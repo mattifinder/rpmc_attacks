@@ -20,7 +20,16 @@ In the paper, we introduce vulnerabilities in both RPMC flash chips (e.g., Winbo
 
 In our paper, we claim that the Lenovo IdeaPad 5 Pro 16ACH16 from 2021 does not use RPMC. Technically, this is correct, as the used flash chip (Winbond 74M series) does not support a technology called RPMC. However, as we found out only after the final deadline of the paper, **this flash series is already a so-called [Authentication Flash](https://www.winbond.com/productResource-files/Winbond_Authentication%20Flash_Product%20Brief.pdf) that is functionally identical and uses the exact same commands as the RPMC version.** We verified that it is used by tracing SPI flash during boot and our [Saleae RPMC analyzer](https://github.com/mattifinder/saleae-RPMC-analyzer) detected the commands right away. Most importantly, this falsifies our assumption that AMD prevents NV state rollbacks without RPMC (or *Authentication Flash*) on that system.
 
-Secondly, we tested a naive NV state rollback on an even older Zen 2-based ASUS desktop mainboard featuring an SPI Flash without rollback counters (Winbond W25Q series): **On this system, naive NV state rollbacks are not detected. Instead, they allowed us to reliably reset the TPM's dictionary attack counters only by reprogramming an old NV state onto the SPI flash using an SPI programmer.**
+Secondly, we re-tested naive NV state rollbacks on additional systems, both by AMD and Intel, to better understand if pre-RPMC NV rollabck protection existed:
+
+- Two AMD-based systems without access to RPMC(-like) SPI flash (Winbond W25Q series)
+  - A Zen 2-based ASUS desktop mainboard 
+  - A Zen 5-based MSI PRO desktop mainboard
+- Two Intel-based systems without access to RPMC(-like) SPI flash
+  - An Intel Core i3-4170 on an ASUS H81M-PLUS
+  - An Intel Core i5-14400 on an MSI PRO B760M-P DDR4
+
+**While the Intel sytems defended against the naive rollbacks, both AMD systems did not. They allowed us to reliably reset the TPM's dictionary attack counters only by reprogramming an old NV state onto the SPI flash using an SPI programmer; no interposer required.**
 
 While these two observations may not be representative of all AMD systems, our key insights are these:
 
@@ -56,9 +65,37 @@ If your system uses an AMD CPU, it is prone to either naive NV state rollbacks (
 
 
 
+### Does my AMD system have and use RPMC?
+
+Unlike on Intel, AMD systems can tell from software whether RPMC is in use. Since Linux 5.19, the `ccp` driver exports the PSP's security attributes via sysfs ([documentation](https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-driver-ccp)), including:
+
+- `rpmc_spirom_available`: whether an RPMC-capable SPI flash is present
+- `rpmc_production_enabled`: whether RPMC has been enabled
+
+On Linux (e.g., booted from a live USB stick), run:
+
+```bash
+grep . /sys/bus/pci/drivers/ccp/*/rpmc_*
+```
+
+Alternatively, the firmware update daemon [fwupd](https://fwupd.github.io/libfwupdplugin/hsi.html) summarizes both attributes in its *AMD SPI Replay protections* attribute, displayed by:
+
+```bash
+fwupdmgr security
+```
+
+These reports match our results: The Lenovo IdeaPad 5 Pro 16ACH16, whose Authentication Flash supports RPMC commands, reports both attributes as `1` and detected naive rollbacks, whereas the Zen 2 desktop reports both as `0` and accepted them.
+
+> [!NOTE]
+> The PSP exports these attributes only on select SoCs. If the files are missing (or fwupd cannot report the attribute), this does **not** imply that your system lacks RPMC.
+
+Either way, an AMD system is exposed to one of the two rollback paths: the *Unverified Increment* attack via an interposer if RPMC is used, or a naive rollback via an SPI programmer if it is not.
+
+
+
 ### Does my system rely on Winbond RPMC flash for its x86 firmware?
 
-Unfortunately, telling the SPI flash manufacturer from running OS is impossible on a lot of systems. Moreso, OEMs may source SPI flash from multiple vendors for a single model.
+For Intel systems, we are not aware of an interface comparable to AMD's (see above). Whether they rely on RPMC can, to our knowledge, only be identified through inspection of the mainboard and SPI bus traffic. Unfortunately, telling the SPI flash manufacturer from running OS is impossible on a lot of systems. Moreso, OEMs may source SPI flash from multiple vendors for a single model.
 
 Open up the back of your laptop and look for a black rectangular chip with markings like Winbond, Macronix, GigaDevice. Winbond's RPMC-capable series are labelled 74M or 25R and it is very likely that those are specifically there to enable the rollback protection of NV state on both Intel and AMD.
 
