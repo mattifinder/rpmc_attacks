@@ -1,7 +1,7 @@
 # RPMC Attacks
 
 This repository provides up-to-date information as well as supplemental material to our paper: 
-["Hello Again: Exploiting Replay Protected Monotonic Counters to Brute-Force Windows Hello PINs"](https://doi.org/10.1145/3830454.3846631) (originally published at ACM CCS 2026)
+["Hello Again: Exploiting Replay Protected Monotonic Counters to Brute-Force Windows Hello PINs"](https://arxiv.org/abs/2611.18126) (originally published at ACM CCS 2026)
 
 > [!IMPORTANT]
 >
